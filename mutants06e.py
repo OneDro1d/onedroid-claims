@@ -7,7 +7,8 @@ witness does (VR-I11). Reuses mutants06.py's fixture builder and runner (the fix
 whose grading.kind is already "self-audit" with two recorded gates; its primary witness is human and signed with the auditor's
 throwaway key). Standard library plus ssh-keygen. Exit 0 when every case gives the expected statuses.
 
-usage: python3 -I mutants06e.py"""
+usage: python3 -I mutants06e.py [SNAPSHOT_DIR]    # the 0.4 snapshot the fixture is built from (mutants06.py's default when omitted:
+                                                  # the notepad's business-models-in-the-agentic-age/2026-11-11; outside the notepad pass one)"""
 import pathlib, shutil, sys, tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
