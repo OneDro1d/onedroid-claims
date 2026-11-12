@@ -1,6 +1,6 @@
 # claims-snapshot: open items for the revision after 0.5
 
-Kept here so the adopted `SPEC.md` (sha256 58221ef5…) and `check.py` (be0db6f9…) stay byte-stable until a revision is cut. Each line names
+Kept here so the adopted `SPEC.md` (0.6, 12 Nov 2026 11:0xZ: sha256 f90e43f7…; 0.5 was 58221ef5…) and `check.py` (2bdd8ba9…; 0.5 was be0db6f9…) stay byte-stable until a revision is cut. Each line names
 where it came from. The format's owner is trilix-onedroid-business; a line leaves this file when a revision adopts or rejects it.
 
 1. **Signature bytes are never an identity** (gate of Indie #64, 12 Nov 2026, note V5). OpenSSH 10.2's `ssh-keygen -Y verify` accepts an
@@ -22,10 +22,7 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
 7. **The auditor publishes its own verdict and score beside the evidence** (Michal, D71 A, 12 Nov 2026 08:5xZ). A `claimed`
    verdict per audit row and an auditor's score; the witness decides independently; the checker reports the agreement between
    the auditor's claimed verdicts and each witness. One section of 3/4b changes, K11 and K12 learn the comparison.
-8. **A witness service on classifier models** (Michal, 12 Nov 2026 08:5xZ, D80 on his page). A public service takes an auditor
-   part in the fixed format and answers, claim by claim, OK / not OK / do not know, from N cheap classifier models; each model's
-   answer is a signed witness file in that model's name. Contract to write: a witness `method` of `classify` (beside `read` and
-   `re-run` for test runs; for pages and agent work the method field is new), "do not know" as an allowed decision for a
-   non-primary witness (K11 keeps failing a primary witness that leaves a claim undecided), one signing key per model identity
-   (`<service>/<model>` as the allowed_signers principal), the request and answer shapes, and what the checker says when N
-   witnesses disagree (today: the per-witness scores side by side, no majority rule).
+8. ~~A witness service on classifier models~~ **Adopted in 0.6 (12 Nov 2026, section 14)** with three changes from this line's first
+   wording: the principal is hyphenated and traced by a signed key list (never `<service>/<model>`, which the spec's own rule forbids),
+   UNDECIDED is a witness-only verdict with a required note and a fair score, and the one allowed change to a published folder is
+   written down. Items 1 to 7 stand for the revision after 0.6.

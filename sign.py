@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """sign.py: sign one part of a 0.4 snapshot with an SSH key (SPEC.md 3a). Standard library plus ssh-keygen on PATH.
 
-usage: python3 -I sign.py SNAPSHOT_DIR --role auditor|witness --file PART --key PRIVATE_KEY --identity NAME [--commit SHA]
-  PART      audit.jsonl, or witness/<name>.jsonl
+usage: python3 -I sign.py SNAPSHOT_DIR --role auditor|witness|manifest --file PART --key PRIVATE_KEY --identity NAME [--commit SHA]
+  PART      audit.jsonl, or witness/<name>.jsonl; for --role manifest it is manifest.json (and --file may be left out)
   NAME      the signer's identity as it stands in allowed_signers (`ssh-keygen -Y verify -I NAME`): an email address or a
             hyphenated name, no spaces (the principal field of allowed_signers ends at the first space)
 Writes PART.sig (ssh-keygen -Y sign, namespace claims-snapshot) over the one prescribed line, appends the entry to
 signatures.json, and adds the public key to allowed_signers in the snapshot if it is not there yet.
+--role manifest (0.6) signs the manifest itself, `claims-snapshot/0.4 manifest manifest.json sha256:<hex>`: do it last, after every
+other change to the folder, because any later change to manifest.json breaks it (it does not rewrite the manifest).
 The private key never enters the snapshot; keep it out of the folder."""
 import datetime, json, pathlib, subprocess, sys, tempfile
 
@@ -19,14 +21,20 @@ def arg(argv, flag, default=None):
 
 
 def main(argv):
-    if len(argv) < 2 or any(f not in argv for f in ("--role", "--file", "--key", "--identity")):
+    need = ("--role", "--key", "--identity") if arg(argv, "--role") == "manifest" else ("--role", "--file", "--key", "--identity")
+    if len(argv) < 2 or any(f not in argv for f in need):
         print(__doc__)
         return 2
     snap = pathlib.Path(argv[1])
     role, part, key, ident = arg(argv, "--role"), arg(argv, "--file"), pathlib.Path(arg(argv, "--key")), arg(argv, "--identity")
-    if role not in ("auditor", "witness"):
-        print("role must be auditor or witness", file=sys.stderr)
+    if role not in ("auditor", "witness", "manifest"):
+        print("role must be auditor, witness or manifest", file=sys.stderr)
         return 1
+    if role == "manifest":
+        if part not in (None, "manifest.json"):
+            print("--role manifest signs manifest.json only", file=sys.stderr)
+            return 1
+        part = "manifest.json"
     if any(ch.isspace() for ch in ident) or "," in ident:
         print("the identity is the principal in allowed_signers: no spaces or commas (an email address, or a hyphenated name)", file=sys.stderr)
         return 1
@@ -60,7 +68,7 @@ def main(argv):
                  "signed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                  "signature": sig_rel, "commit": arg(argv, "--commit")})
     sigs_p.write_text(json.dumps(sigs, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    # the manifest's signer field for this part
+    # the manifest's signer field for this part (never for the manifest itself: the signature is over its bytes)
     M = json.loads((snap / "manifest.json").read_text(encoding="utf-8"))
     g = M.get("grading", {})
     if role == "auditor" and g.get("auditor"):
@@ -68,7 +76,8 @@ def main(argv):
     for w in g.get("witnesses") or []:
         if w.get("file") == part:
             w["signer"] = f"{ident} <{fingerprint}>"
-    (snap / "manifest.json").write_text(json.dumps(M, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    if role != "manifest":
+        (snap / "manifest.json").write_text(json.dumps(M, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     r = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(allowed), "-I", ident, "-n", check.SIGN_NAMESPACE, "-s", str(snap / sig_rel)],
                        input=line.encode(), capture_output=True)
     print(f"{part}: signed as {ident} ({fingerprint}); self-verify exit {r.returncode}: {(r.stdout + r.stderr).decode(errors='replace').strip()}")
