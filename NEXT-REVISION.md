@@ -1,6 +1,6 @@
 # claims-snapshot: open items for the revision after 0.5
 
-Kept here so the adopted `SPEC.md` (0.6, 12 Nov 2026 11:0xZ: sha256 f90e43f7…; 0.5 was 58221ef5…) and `check.py` (2bdd8ba9…; 0.5 was be0db6f9…) stay byte-stable until a revision is cut. Each line names
+Kept here so the adopted `SPEC.md` (0.6 with erratum 1, 12 Nov 2026 13:3xZ: sha256 c01aa365…; 0.6 as cut was f90e43f7…, 0.5 was 58221ef5…) and `check.py` (0495931b…; 0.6 as cut was 2bdd8ba9…, 0.5 was be0db6f9…) stay byte-stable until a revision is cut. Each line names
 where it came from. The format's owner is trilix-onedroid-business; a line leaves this file when a revision adopts or rejects it.
 
 1. **Signature bytes are never an identity** (gate of Indie #64, 12 Nov 2026, note V5). OpenSSH 10.2's `ssh-keygen -Y verify` accepts an
@@ -26,3 +26,14 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    wording: the principal is hyphenated and traced by a signed key list (never `<service>/<model>`, which the spec's own rule forbids),
    UNDECIDED is a witness-only verdict with a required note and a fair score, and the one allowed change to a published folder is
    written down. Items 1 to 7 stand for the revision after 0.6.
+9. **`grading.kind` is declared, not checked** (0.6 erratum 1, 12 Nov 2026). The checker reads `self-audit` to admit an agent primary
+   under the auditor's key, but nothing checks the declaration against the signatures: `split` with one signer, or `self-audit` with two,
+   both pass. The revision adds a K13 line: `self-audit` iff the auditor part and the primary witness verify under the same key
+   (WARN first, FAIL once every published folder says it right).
+10. **One root key for the witness service's model keys** (Talos, 12 Nov 2026, its D80 note item 7). Today every line of
+   `keys/model-keys.jsonl` is in a commit signed by Michal's GitHub key, so every new model or rotation is his action. Cheaper: he signs
+   one root line (`onedroid-witness-root`) once; the root signs each per-model line; K13 checks list ← root ← Michal. One action from
+   him, ever, unless the root rotates. Needs a signature field per line and the root's own entry; a 0.7 checker rule.
+11. **A sealed scenario's expected behaviour never reaches the tested agent** (Michal, 12 Nov 2026, the Swarm rule). For the
+   test-run profile: the record should say where the verdict was computed (the machine or the centre) and whether the expectation was
+   present on the machine during the run; a plane that keeps the holdout marks the record `verdict_at: centre`. Section 13 field.
