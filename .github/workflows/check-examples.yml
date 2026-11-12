@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the adopted one (claims-snapshot 0.6 with erratum 1, 12 Nov 2026)
+      - name: the checker is the adopted one (claims-snapshot 0.6 with erratum 1 and the pre-witness stage, 12 Nov 2026)
         run: |
-          echo "0495931bc60509143bf84a7c95216838382c1e9f81ba52b37e7bff1c495013bf  check.py" > checker.sha256
+          echo "91f5459865575443655163e706d550788bed045fb775b575e2b65c3da7e36a5e  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.6 (imported from the checked-out tree, so no -I here)
         run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
@@ -19,5 +19,7 @@ jobs:
         run: python3 -I check.py examples/agent-work-s-i10-2026-11-12
       - name: test-run example
         run: python3 -I check.py examples/test-run-example-2026-11-12
+      - name: the pre-witness stage suite (fixture A from the agent-work example; fixture B needs a snapshot this repository does not hold, skipped)
+        run: python3 -I mutants06p.py
       - name: the key list parses (empty until the witness service mints keys)
         run: python3 -c "import json; [json.loads(l) for l in open('keys/model-keys.jsonl') if l.strip()]; print('key list ok')"
