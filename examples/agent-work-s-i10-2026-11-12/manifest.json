@@ -1,0 +1,123 @@
+{
+  "format": "claims-snapshot/0.5",
+  "subject": {
+    "parts": [],
+    "publisher": "dev@example.com",
+    "session_id": "aaaaaaaa-1111-2222-3333-444444444444",
+    "title": "Claims of agent session aaaaaaaa-1111-2222-3333-444444444444 at turn end #2",
+    "turn_end": 2,
+    "url": null
+  },
+  "taken_at": "2026-11-12T01:43:55Z",
+  "pages": [
+    {
+      "file": "page.txt",
+      "lines": 3,
+      "note": "the claims' text as the agent wrote it in its claims block (audit.jsonl), one per line; the kit keeps the block, not the whole reply",
+      "sha256": "392b82a2cf265646b4bca04f491bcf3824512af71e436b9a4e8ed935c43a531b"
+    }
+  ],
+  "sources": [
+    {
+      "copy": "text",
+      "file": "sources/files/bye.txt",
+      "n": 1,
+      "path": "bye.txt",
+      "role": "file",
+      "sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+      "taken_from": "the developer's working tree when the bundle was made",
+      "url": null
+    },
+    {
+      "copy": "text",
+      "file": "sources/files/hello.txt",
+      "n": 2,
+      "path": "hello.txt",
+      "role": "file",
+      "sha256": "98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4",
+      "taken_from": "the developer's working tree when the bundle was made",
+      "url": null
+    }
+  ],
+  "grading": {
+    "auditor": {
+      "file": "audit.jsonl",
+      "model": "claude-code",
+      "name": "agent",
+      "note": "the agent that did the work wrote this block at its turn end; signed by the machine's enrolled key, the human named stands behind it",
+      "sha256": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+      "signer": "dev@example.com \u003cSHA256:JKhB1Cm6qtOZ1fQ/Gmznkz2baydF6kBRL+EkcBXK3OQ\u003e"
+    },
+    "gates": [],
+    "graded_at": "2026-11-12T01:43:55.065583165Z",
+    "grader": "alice",
+    "kind": "split",
+    "method": "the kit showed each claim with its evidence pointers (file lines from /tmp/TestBundleRoundTrip2623656254/002, the session record's rows); the witness decided",
+    "model": "human",
+    "profile": "agent-work",
+    "rounds": [],
+    "sessions": [
+      {
+        "available": "on request",
+        "complete": true,
+        "gaps": 0,
+        "held_by": "dev@example.com",
+        "machine_id": "m-79630c44d14d488e6765fe41c9a01ed7",
+        "record_sha256": "74888ca2d0f7ba830c9294e5b8a2493bb5411299eb926ecb431e9b907ae6e65e",
+        "record_upto_sequence": 2,
+        "recorder": "onedroid-indie 0.1.0-dev (unknown)",
+        "role": "auditor",
+        "session_id": "aaaaaaaa-1111-2222-3333-444444444444"
+      }
+    ],
+    "witnesses": [
+      {
+        "file": "witness/alice.jsonl",
+        "method": "the kit showed each claim with its evidence pointers (file lines from /tmp/TestBundleRoundTrip2623656254/002, the session record's rows); the witness decided",
+        "missing_claims": 0,
+        "model": "human",
+        "name": "alice",
+        "primary": true,
+        "score": {
+          "band": "D",
+          "contradiction_pct": 33,
+          "coverage_pct": 33
+        },
+        "sha256": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
+        "signer": "alice@example.com"
+      }
+    ]
+  },
+  "counts": {
+    "author_read": 0,
+    "checkable": 3,
+    "claims": 3,
+    "contradicted": 1,
+    "contradicted_high": 1,
+    "evidenced": 1,
+    "no_evidence": 1,
+    "on_request": 0,
+    "withdrawn": 0
+  },
+  "score": {
+    "band": "D",
+    "contradiction_pct": 33,
+    "coverage_pct": 33,
+    "formula": "evidence-score/1"
+  },
+  "claims_sha256": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
+  "files": {
+    "allowed_signers": "f210f0f117c4a7964c6f71584c7ad2967b8005bfd410b7cbe76ac25d241c6d59",
+    "anchors.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "audit.jsonl": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+    "audit.jsonl.sig": "31d516122b5a58bfbc6016cccdbb8357ce125ef1c0d5551eaf46e5dff0caf869",
+    "claims.jsonl": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
+    "page.txt": "392b82a2cf265646b4bca04f491bcf3824512af71e436b9a4e8ed935c43a531b",
+    "signatures.json": "17371f4abc7eab27e383bd2197737b6e2da6c9394680c3d651018db76312fbfc",
+    "sources/files/bye.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "sources/files/hello.txt": "98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4",
+    "witness/alice.jsonl": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
+    "witness/alice.jsonl.sig": "5446592c87022c998c880c9d1d32d5d7d15788a7591af81ca301e8efcfe3330a"
+  },
+  "bundled_with": "onedroid-indie 0.1.0-dev (unknown)"
+}

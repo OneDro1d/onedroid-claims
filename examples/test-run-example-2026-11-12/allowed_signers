@@ -1,0 +1,2 @@
+trilix-gate-example-runner namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBqBAqsKffQxMMeJVYf/JhoUZO/k2paRWo0W9EwNii6m
+trilix-gate-witness-example namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB9Wi1olhkKLssRsqGnMD1pvwihSvIBwxkjwPMT2U0WT

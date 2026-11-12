@@ -1,0 +1,30 @@
+[
+ {
+  "commit": null,
+  "file": "audit.jsonl",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "role": "auditor",
+  "sha256": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "signature": "audit.jsonl.sig",
+  "signed_at": "2026-11-12T01:43:55Z",
+  "signer": {
+   "key_id": "SHA256:JKhB1Cm6qtOZ1fQ/Gmznkz2baydF6kBRL+EkcBXK3OQ",
+   "kind": "ssh-ed25519",
+   "name": "dev@example.com"
+  }
+ },
+ {
+  "role": "witness",
+  "file": "witness/alice.jsonl",
+  "sha256": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
+  "line": "claims-snapshot/0.4 witness witness/alice.jsonl sha256:dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff over audit.jsonl sha256:15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "signer": {
+   "name": "alice@example.com",
+   "key_id": "SHA256:KFEiwyTLlxt15U9UIC//c+1egsFEZ/UNh6sQ2+XlWXo",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-12T01:43:55Z",
+  "signature": "witness/alice.jsonl.sig",
+  "commit": null
+ }
+]

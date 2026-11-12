@@ -1,0 +1,166 @@
+{
+  "format": "claims-snapshot/0.5",
+  "subject": {
+    "environment": {
+      "name": "example",
+      "sha256": "7b44db9966e5139820e6810d2953789cd18580bb80f2b29d0ddac294568b4f4f"
+    },
+    "finished_at": "2026-11-12T03:00:01Z",
+    "kind": "test-run",
+    "publisher": "trilix-gate-example-runner",
+    "runner": {
+      "id": "trilix-gate-example",
+      "machine_id": "m-79c59a1469d29e945607dd3bccb8d177"
+    },
+    "scenario": {
+      "id": "EXAMPLE-shape",
+      "sha256": "a2842eaffc94f6556737f9490c3e885bbf73f58126eac5b8490747594721f360"
+    },
+    "started_at": "2026-11-12T03:00:00Z",
+    "system_under_test": {
+      "commit": "917612aa04defa1c13fbe9938f31e063fddb6630",
+      "image_digest": null,
+      "repository": "github.com/OneDro1d/onedroid-fleet"
+    },
+    "title": "Test run of scenario EXAMPLE-shape at commit 917612aa04de",
+    "url": null
+  },
+  "taken_at": "2026-11-12T03:00:01Z",
+  "evidence_locator": {
+    "held_by": "folder",
+    "where": null,
+    "expires_at": null,
+    "note": "every artefact is in this folder, under sources/artefacts/"
+  },
+  "pages": [
+    {
+      "file": "page.txt",
+      "lines": 3,
+      "note": "the three claims' text as the runner wrote them (audit.jsonl), one per line",
+      "sha256": "c4d7c4a621b891ce39db93cd7ce25add54e5736696286611d8b54d9e7844699f"
+    }
+  ],
+  "sources": [
+    {
+      "artefact_role": "scenario",
+      "copy": "text",
+      "file": "sources/artefacts/example-shape.yaml",
+      "n": 1,
+      "name": "example-shape.yaml",
+      "role": "artefact",
+      "sha256": "a2842eaffc94f6556737f9490c3e885bbf73f58126eac5b8490747594721f360",
+      "url": null
+    },
+    {
+      "artefact_role": "sut",
+      "copy": "text",
+      "file": "sources/artefacts/sut.json",
+      "n": 2,
+      "name": "sut.json",
+      "role": "artefact",
+      "sha256": "4140572393570fdcc6313fd5a02a66dc2adb36ae434d3751958bf00c8bd8d76f",
+      "url": null
+    },
+    {
+      "artefact_role": "environment",
+      "copy": "text",
+      "file": "sources/artefacts/example.json",
+      "n": 3,
+      "name": "example.json",
+      "role": "artefact",
+      "sha256": "7b44db9966e5139820e6810d2953789cd18580bb80f2b29d0ddac294568b4f4f",
+      "url": null
+    },
+    {
+      "artefact_role": "result",
+      "copy": "text",
+      "file": "sources/artefacts/result.json",
+      "n": 4,
+      "name": "result.json",
+      "role": "artefact",
+      "sha256": "064456ced43c40292f03836cba8f85bf5240e7cd2744a929892eb374ebc3cf5a",
+      "url": null
+    },
+    {
+      "artefact_role": "log",
+      "copy": "text",
+      "file": "sources/artefacts/corr-example.log",
+      "n": 5,
+      "name": "corr-example.log",
+      "role": "artefact",
+      "sha256": "eef090cb4d7e7e49aff260cdc27e158400d15fd426b599bddda3b3e4b89a2f46",
+      "url": null
+    }
+  ],
+  "grading": {
+    "auditor": {
+      "file": "audit.jsonl",
+      "model": "onedroid-indie 0.1.0-dev (unknown)",
+      "name": "runner",
+      "note": "the party that ran the scenario wrote these three claims when the run finished: the inputs, the outputs, what the run tells you",
+      "sha256": "83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
+      "signer": "trilix-gate-example-runner \u003cSHA256:3e1ynIKpZCbNAIGBU3TI5tkFcgyEsp0sF1Rthr6Embo\u003e"
+    },
+    "gates": [],
+    "graded_at": "2026-11-12T02:49:37.617610202Z",
+    "grader": "trilix-gate-witness",
+    "kind": "split",
+    "method": "read",
+    "model": "human",
+    "profile": "test-run",
+    "rounds": [],
+    "sessions": [],
+    "witnesses": [
+      {
+        "file": "witness/trilix-gate-witness.jsonl",
+        "method": "read",
+        "missing_claims": 0,
+        "model": "human",
+        "name": "trilix-gate-witness",
+        "primary": true,
+        "score": {
+          "band": "A",
+          "contradiction_pct": 0,
+          "coverage_pct": 100
+        },
+        "sha256": "25e07c7594448f618ce573adc2c36398906466f03742c6a2b2b175e615c0a052",
+        "signer": "trilix-gate-witness-example"
+      }
+    ]
+  },
+  "counts": {
+    "author_read": 0,
+    "checkable": 3,
+    "claims": 3,
+    "contradicted": 0,
+    "contradicted_high": 0,
+    "evidenced": 3,
+    "no_evidence": 0,
+    "on_request": 0,
+    "withdrawn": 0
+  },
+  "score": {
+    "band": "A",
+    "contradiction_pct": 0,
+    "coverage_pct": 100,
+    "formula": "evidence-score/1"
+  },
+  "claims_sha256": "3a6945a6626cafca46d11c888ea3316be8a6cfd2e356991e6e0c08f5df1e2fdb",
+  "files": {
+    "allowed_signers": "b4fca7a60d04a5c38c2c2ccd3be2170080277201da5a312037d12d74f38416a4",
+    "anchors.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "audit.jsonl": "83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
+    "audit.jsonl.sig": "17638ee5a36fb5e6c6aea473a565882cbc6d44f2ae22573da2ccd1384db93b05",
+    "claims.jsonl": "3a6945a6626cafca46d11c888ea3316be8a6cfd2e356991e6e0c08f5df1e2fdb",
+    "page.txt": "c4d7c4a621b891ce39db93cd7ce25add54e5736696286611d8b54d9e7844699f",
+    "signatures.json": "bb203e7b30cb4e0d924e618aaf57a959e8d35ec11e42479f74d13e0fb50e0ba5",
+    "sources/artefacts/corr-example.log": "eef090cb4d7e7e49aff260cdc27e158400d15fd426b599bddda3b3e4b89a2f46",
+    "sources/artefacts/example-shape.yaml": "a2842eaffc94f6556737f9490c3e885bbf73f58126eac5b8490747594721f360",
+    "sources/artefacts/example.json": "7b44db9966e5139820e6810d2953789cd18580bb80f2b29d0ddac294568b4f4f",
+    "sources/artefacts/result.json": "064456ced43c40292f03836cba8f85bf5240e7cd2744a929892eb374ebc3cf5a",
+    "sources/artefacts/sut.json": "4140572393570fdcc6313fd5a02a66dc2adb36ae434d3751958bf00c8bd8d76f",
+    "witness/trilix-gate-witness.jsonl": "25e07c7594448f618ce573adc2c36398906466f03742c6a2b2b175e615c0a052",
+    "witness/trilix-gate-witness.jsonl.sig": "317f52801a1abebae27faf8b099cdb5c4124ebc881256a1167298c0165da4eb0"
+  },
+  "bundled_with": "onedroid-indie 0.1.0-dev (unknown)"
+}

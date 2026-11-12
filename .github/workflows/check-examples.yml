@@ -1,0 +1,19 @@
+name: check the examples
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: the checker is the adopted one
+        run: |
+          echo "be0db6f93781decafd1fce55feb6a903f613bd951389b64d61af0edba6113e48  check.py" > checker.sha256
+          sha256sum -c checker.sha256
+      - name: agent-work example
+        run: python3 -I check.py examples/agent-work-s-i10-2026-11-12
+      - name: test-run example
+        run: python3 -I check.py examples/test-run-example-2026-11-12

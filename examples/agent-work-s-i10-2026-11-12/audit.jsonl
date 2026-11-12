@@ -1,0 +1,3 @@
+{"id":"C-001","text":"hello.txt holds hi","kind":"process","evidence":[{"file":"hello.txt","line":1}]}
+{"id":"C-002","text":"the tests pass","kind":"process","evidence":[{"command":"go test ./...","output_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]}
+{"id":"C-003","text":"bye.txt holds bye","kind":"process","evidence":[{"file":"bye.txt","line":1}]}

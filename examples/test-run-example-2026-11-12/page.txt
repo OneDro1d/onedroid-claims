@@ -1,0 +1,3 @@
+We ran scenario EXAMPLE-shape against github.com/OneDro1d/onedroid-fleet at commit 917612aa04defa1c13fbe9938f31e063fddb6630 (no image: the system under test is the commit itself) in environment example.
+We got 1 named check(s), 1 placeholder, overall placeholder, in 1s, with logs for 1 correlation id(s).
+Example of the test-run record shape at commit 917612aa: no scenario was run, the one check is a placeholder, and this record proves nothing about the plane.

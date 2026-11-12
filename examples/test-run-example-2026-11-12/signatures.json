@@ -1,0 +1,30 @@
+[
+ {
+  "commit": null,
+  "file": "audit.jsonl",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
+  "role": "auditor",
+  "sha256": "83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
+  "signature": "audit.jsonl.sig",
+  "signed_at": "2026-11-12T02:49:37Z",
+  "signer": {
+   "key_id": "SHA256:3e1ynIKpZCbNAIGBU3TI5tkFcgyEsp0sF1Rthr6Embo",
+   "kind": "ssh-ed25519",
+   "name": "trilix-gate-example-runner"
+  }
+ },
+ {
+  "role": "witness",
+  "file": "witness/trilix-gate-witness.jsonl",
+  "sha256": "25e07c7594448f618ce573adc2c36398906466f03742c6a2b2b175e615c0a052",
+  "line": "claims-snapshot/0.4 witness witness/trilix-gate-witness.jsonl sha256:25e07c7594448f618ce573adc2c36398906466f03742c6a2b2b175e615c0a052 over audit.jsonl sha256:83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
+  "signer": {
+   "name": "trilix-gate-witness-example",
+   "key_id": "SHA256:L0O07PgA9d0xhQbK5rDezczsIjluh94rSljxxBtTiW4",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-12T02:49:37Z",
+  "signature": "witness/trilix-gate-witness.jsonl.sig",
+  "commit": null
+ }
+]
