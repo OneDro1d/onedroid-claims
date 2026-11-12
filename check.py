@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """check.py: the mechanical checker for a claims snapshot (SPEC.md section 5). Standard library only, no model.
 
-usage: python3 -I check.py SNAPSHOT_DIR [--copies DIR] [--fetch] [--strict] [--json]
+usage: python3 -I check.py SNAPSHOT_DIR [--copies DIR] [--fetch] [--strict] [--json] [--keys FILE]
   --copies DIR  a private folder holding NNN.txt (or NNN.pdf-text.txt) copies of hash-only sources, to verify quotes offline
   --fetch       fetch every source live (GET, browser user-agent) and check the quotes are still there (K10)
   --strict      a quote gone from a live page fails K10 instead of warning
   --json        also write CHECK.json into the snapshot folder: the run as data (SPEC.md section 5)
+  --keys FILE   0.6: the published key list (keys/model-keys.jsonl of the public repository) a model witness's principal is
+                checked against; a broken binding FAILs. Without it the snapshot's own keys/model-keys.jsonl is used (a broken
+                binding there is a WARN), and without either the checker warns.
 Prints one line per check (PASS / WARN / FAIL) with details, then a summary; exit 0 when nothing failed.
 A 0.4 snapshot (audit.jsonl + witness/) gets K11 to K15 as well; K13 verifies SSH signatures when ssh-keygen is on PATH.
 0.5 adds the agent-work profile (an agent's claims about its own work, OneDroid Indie's bundle; SPEC.md section 12):
 K5/K6 check its evidence pointers from the folder, K7 does not apply to them, K11 reads its MISSING CLAIM rows,
 K13 fails a witness signed with the auditor's key.
-0.5 adds the test-run profile (a scenario run as a claim record: three claims, evidence by artefact hash; SPEC.md section 13)."""
+0.5 adds the test-run profile (a scenario run as a claim record: three claims, evidence by artefact hash; SPEC.md section 13).
+0.6 adds witnesses of kind human | agent | model, the method classify, the witness verdict UNDECIDED, per-witness scores without
+undecided rows, split lines across model witnesses, the key list, the manifest signature role (SPEC.md section 14)."""
 import datetime, hashlib, html, json, pathlib, re, shutil, subprocess, sys, urllib.error, urllib.request
 
-FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5"}
-WITNESS_VERDICTS = {"EVIDENCED", "NO EVIDENCE PUBLISHED", "CONTRADICTED", "EVIDENCE AVAILABLE ON REQUEST", "WITHDRAWN", "MISSING CLAIM"}
+FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6"}
+WITNESS_VERDICTS = {"EVIDENCED", "NO EVIDENCE PUBLISHED", "CONTRADICTED", "EVIDENCE AVAILABLE ON REQUEST", "WITHDRAWN", "MISSING CLAIM", "UNDECIDED"}  # UNDECIDED: 0.6, a witness never the primary; never in VERDICTS, so never in claims.jsonl
+WITNESS_KINDS = {"human", "agent", "model"}  # the witness header `kind` (0.6); absent means human
+KEY_LIST = "keys/model-keys.jsonl"
 SIGN_NAMESPACE = "claims-snapshot"
 ANCHOR_METHODS = {"ots", "argus-commitment", "armarium"}
 # the order of keys in a merged claims.jsonl row (SPEC.md 4b): the auditor's row with the witness's decision in the 0.3 places
@@ -41,6 +48,25 @@ def parse_time(t):
         return datetime.datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
     except ValueError:
         return None
+
+def parse_rfc3339(t):
+    """An RFC3339 time (Z or an offset, optional fraction) as an aware datetime, else None."""
+    if not isinstance(t, str):
+        return None
+    try:
+        d = datetime.datetime.fromisoformat(t.strip().replace("Z", "+00:00") if t.strip().endswith("Z") else t.strip())
+    except ValueError:
+        return None
+    return d if d.tzinfo else None
+
+
+def key_of(fields):
+    """The key of an allowed_signers line or a key-list value as `type base64` (a trailing comment is not part of it), else None."""
+    kt = [i for i, x in enumerate(fields) if x.startswith(("ssh-", "ecdsa-", "sk-"))]
+    if not kt or kt[0] + 1 >= len(fields):
+        return None
+    return fields[kt[0]] + " " + fields[kt[0] + 1]
+
 
 RECORD_PTR = re.compile(r"^([^#\s]{1,128})#([0-9]{1,18})$")
 BANDS = [(90, "A"), (75, "B"), (50, "C"), (25, "D"), (0, "E")]
@@ -234,6 +260,7 @@ def main(argv):
     fetch = "--fetch" in argv
     strict = "--strict" in argv
     want_json = "--json" in argv
+    keys_arg = pathlib.Path(argv[argv.index("--keys") + 1]) if "--keys" in argv and argv.index("--keys") + 1 < len(argv) else None
     R = Report()
 
     # K1 manifest
@@ -324,6 +351,8 @@ def main(argv):
     bad = []
     files = [(pg["file"], pg["sha256"]) for pg in pages] + [(s["file"], s["sha256"]) for s in M["sources"] if s.get("file")]
     files.append(("claims.jsonl", M["claims_sha256"]))
+    if isinstance(M.get("files"), list):  # 0.6: files listed beside the above (service.json, split.jsonl), each with its sha256
+        files += [(e_["file"], e_.get("sha256")) for e_ in M["files"] if isinstance(e_, dict) and e_.get("file")]
     for f, h in files:
         p = snap / f
         if not p.exists():
@@ -610,6 +639,15 @@ def main(argv):
     if is_04:
         bad, witnesses, w_rows_by_name, primary = [], g.get("witnesses") or [], {}, None
         k11_warn = []  # test-run (SPEC 13): a re-run result the folder does not hold
+        fmt06 = M.get("format") == "claims-snapshot/0.6"
+        w_hdr, w_kind, w_kind_file, w_und = {}, {}, {}, {}  # 0.6: header, effective kind, kind by file, UNDECIDED count, per witness
+        kind_bad = []   # a `kind` outside human | agent | model, said on K1 (FAIL in 0.6, WARN before)
+        try:
+            sigs_pre = json.loads((snap / "signatures.json").read_text(encoding="utf-8")) if (snap / "signatures.json").exists() else []
+        except Exception:
+            sigs_pre = []
+        if not isinstance(sigs_pre, list):
+            sigs_pre = []
         audit_p = snap / "audit.jsonl"
         if not audit_p.exists():
             bad.append("audit.jsonl missing")
@@ -670,9 +708,21 @@ def main(argv):
                 bad.append(f"witness {name!r}: header names {header.get('witness')!r}")
             if over.get("file") != "audit.jsonl" or over.get("sha256") != audit_h:
                 bad.append(f"witness {name!r}: header is over {over.get('file')!r} sha256 {str(over.get('sha256'))[:12]}…, audit.jsonl is {str(audit_h)[:12]}…")
+            ek = "human"
+            for src_, kv in (("header", header.get("kind")), ("manifest entry", w.get("kind"))):
+                if kv is None:
+                    continue
+                if isinstance(kv, str) and kv in WITNESS_KINDS:
+                    if src_ == "header" or "kind" not in header:
+                        ek = kv
+                else:
+                    kind_bad.append(f"witness {name!r}: {src_} kind {kv!r} is not human, agent or model")
+            w_hdr[name], w_kind[name], w_kind_file[wf] = header, ek, ek
+            if header.get("method") == "classify" and ek != "model":
+                bad.append(f"witness {name!r}: method 'classify' is for a witness of kind 'model' only (this one is {ek!r})")
             if profile == "test-run":
-                if header.get("method") not in ("read", "re-run"):
-                    bad.append(f"witness {name!r}: method {header.get('method')!r} must be 'read' or 're-run'")
+                if header.get("method") not in ("read", "re-run", "classify"):
+                    bad.append(f"witness {name!r}: method {header.get('method')!r} must be 'read', 're-run' or 'classify'")
                 elif header.get("method") == "re-run":
                     rr = header.get("rerun_result")
                     if not (isinstance(rr, dict) and isinstance(rr.get("artefact"), str) and rr["artefact"].strip()
@@ -684,7 +734,7 @@ def main(argv):
             w_rows_by_name[name] = rows
             if w.get("primary"):
                 primary = (name, rows)
-            seen, decided = set(), set()
+            seen, decided, und_ids = set(), set(), []
             for r in rows:
                 rid, v = r.get("id"), r.get("verdict")
                 if rid in seen:
@@ -713,6 +763,12 @@ def main(argv):
                 if rid not in audit_ids:
                     bad.append(f"witness {name!r} {rid}: not in audit.jsonl")
                     continue
+                if v == "UNDECIDED":
+                    # 0.6: a witness's "do not know": counted, never merged, never a primary's; it must say why
+                    und_ids.append(rid)
+                    if not (isinstance(r.get("note"), str) and r["note"].strip()):
+                        bad.append(f"witness {name!r} {rid}: UNDECIDED without a note saying why")
+                    continue
                 decided.add(rid)
                 a = by_audit_id[rid]
                 on = r.get("on") or {}
@@ -735,13 +791,28 @@ def main(argv):
                     bad.append(f"witness {name!r} {rid}: graded_by {r.get('graded_by')!r}")
                 if not r.get("graded_at"):
                     bad.append(f"witness {name!r} {rid}: no graded_at")
-            if w.get("primary") and audit_ids - decided:
-                und = sorted(audit_ids - decided)
+            w_und[name] = len(und_ids)
+            if w.get("primary") and und_ids:
+                bad.append(f"primary witness {name!r} has {len(und_ids)} UNDECIDED row(s): a primary leaves nothing undecided: " + ", ".join(sorted(und_ids)[:8]) + ("…" if len(und_ids) > 8 else ""))
+            if w.get("primary") and audit_ids - decided - set(und_ids):
+                und = sorted(audit_ids - decided - set(und_ids))
                 bad.append(f"primary witness {name!r} left {len(und)} claim(s) undecided: " + ", ".join(und[:8]) + ("…" if len(und) > 8 else ""))
+            if w.get("primary") and ek == "model":
+                # 0.6: a model may be primary only when a named principal signed the manifest saying so
+                pnb = g.get("primary_named_by")
+                if not (isinstance(pnb, str) and pnb.strip()):
+                    bad.append(f"primary witness {name!r} is of kind model: grading.primary_named_by must name the principal who chose it")
+                elif not any(isinstance(e_, dict) and e_.get("role") == "manifest" and (e_.get("signer") or {}).get("name") == pnb for e_ in sigs_pre):
+                    bad.append(f"primary witness {name!r} is of kind model: no manifest signature by primary_named_by {pnb!r} in signatures.json")
         R.add("K11", "FAIL" if bad else ("WARN" if k11_warn else "PASS"), f"audit.jsonl {len(audit)} rows without decisions; {len(witnesses)} witness file(s) over its hash, every decision on a listed claim and a candidate it names" + (f"; {len(k11_warn)} note(s)" if k11_warn else "") if not bad else f"{len(bad)} violation(s)", bad + k11_warn)
+        if kind_bad:
+            for i_, (k_, st_, m_, d_) in enumerate(R.rows):
+                if k_ == "K1":
+                    R.rows[i_] = (k_, "FAIL" if fmt06 else "WARN", m_ + "; witness kind: " + ", ".join(kind_bad), d_)
+                    break
 
         # K12 the merge and the per-witness scores
-        bad, info = [], []
+        bad, info, k12_warn = [], [], []
         if primary and audit:
             merged = merge_rows(audit, primary[1], primary[0])
             published = load_jsonl(snap / "claims.jsonl")  # as published: K5 has set proofs[].verified on the rows in memory
@@ -755,7 +826,8 @@ def main(argv):
                 rows = w_rows_by_name.get(w.get("name"))
                 if rows is None:
                     continue
-                sc = evidence_score(merge_rows(audit, rows, w.get("name")))
+                # 0.6: this witness's UNDECIDED rows are not checkable for this witness's score (its denominator only)
+                sc = evidence_score([m_ for m_ in merge_rows(audit, rows, w.get("name")) if m_.get("verdict") != "UNDECIDED"])
                 want = w.get("score") or {}
                 for k in ("coverage_pct", "contradiction_pct", "band"):
                     if want.get(k) != sc.get(k):
@@ -763,20 +835,40 @@ def main(argv):
                 n_missing = sum(1 for r in rows if r.get("verdict") == "MISSING CLAIM")
                 if w.get("missing_claims", 0) != n_missing:
                     bad.append(f"witness {w.get('name')!r} missing_claims: manifest {w.get('missing_claims')} vs {n_missing} rows")
+                n_und = sum(1 for r in rows if r.get("verdict") == "UNDECIDED")
+                if "undecided" in w:
+                    if w["undecided"] != n_und or isinstance(w["undecided"], bool):
+                        bad.append(f"witness {w.get('name')!r} undecided: manifest {w.get('undecided')} vs {n_und} UNDECIDED rows")
+                elif n_und:
+                    (bad if fmt06 else k12_warn).append(f"witness {w.get('name')!r} has {n_und} UNDECIDED row(s) and its manifest entry has no `undecided` count")
+                h_ = w_hdr.get(w.get("name"))
+                if h_ is not None and "kind" in h_ and "kind" in w and h_["kind"] != w["kind"]:
+                    bad.append(f"witness {w.get('name')!r} kind: manifest entry {w['kind']!r} vs header {h_['kind']!r}")
                 if not w.get("primary"):
-                    both = [r for r in rows if r.get("id") in p_verdicts]
+                    both = [r for r in rows if r.get("id") in p_verdicts and r.get("verdict") != "UNDECIDED"]  # the agreement counts the rows the witness decided
                     agree = sum(1 for r in both if r.get("verdict") == p_verdicts[r["id"]])
                     info.append(f"witness {w.get('name')!r}: {sc.get('coverage_pct')}% / {sc.get('contradiction_pct')}% band {sc.get('band')}, {n_missing} missing-claim row(s); agrees with the primary on {agree} of {len(both)} claims both decided")
                 else:
                     info.append(f"primary witness {w.get('name')!r}: {sc.get('coverage_pct')}% / {sc.get('contradiction_pct')}% band {sc.get('band')}, {n_missing} missing-claim row(s)")
+            # 0.6: one line per claim on which witnesses of kind model split (UNDECIDED is a side); no majority rule, no verdict change
+            model_ws = [w.get("name") for w in witnesses if w_kind.get(w.get("name")) == "model" and w.get("name") in w_rows_by_name]
+            if len(model_ws) >= 2:
+                for a_ in audit:
+                    sides = []
+                    for n_ in model_ws:
+                        rv = next((r.get("verdict") for r in w_rows_by_name[n_] if r.get("id") == a_.get("id") and r.get("verdict") != "MISSING CLAIM"), None)
+                        if rv is not None:
+                            sides.append((n_, rv))
+                    if len({v_ for _, v_ in sides}) > 1:
+                        info.append(f"split on {a_.get('id')}: " + ", ".join(f"{n_} {v_}" for n_, v_ in sides))
         else:
             bad.append("no primary witness or no audit rows to merge")
-        R.add("K12", "FAIL" if bad else "PASS", ("claims.jsonl equals the merge; per-witness scores and missing-claim counts recomputed" if not bad else f"{len(bad)} difference(s)"), bad + info)
+        R.add("K12", "FAIL" if bad else ("WARN" if k12_warn else "PASS"), ("claims.jsonl equals the merge; per-witness scores and missing-claim counts recomputed" if not bad else f"{len(bad)} difference(s)"), bad + k12_warn + info)
 
         # K13 signatures over the prescribed line, verified with ssh-keygen when it is on PATH
-        parts = {"audit.jsonl": "auditor"} | {w.get("file"): "witness" for w in witnesses if w.get("file")}
+        parts = {"audit.jsonl": "auditor"} | {w.get("file"): "witness" for w in witnesses if w.get("file")} | {"manifest.json": "manifest"}  # manifest: 0.6, optional
         sig_p = snap / "signatures.json"
-        bad, warn, ok, covered = [], [], [], set()
+        bad, warn, ok, covered, bind_ok = [], [], [], set(), []
         if not sig_p.exists():
             warn.append("no signatures.json: the parts are unsigned")
         else:
@@ -817,12 +909,16 @@ def main(argv):
                     warn.append(f"{f}: signature by {name!r} present, not verified here (" + ("ssh-keygen not on PATH" if not tool else "no allowed_signers in the snapshot" if not allowed.exists() else "no signer name") + ")")
             for f in parts:
                 if f not in covered:
+                    if f == "manifest.json":
+                        continue  # 0.6: the manifest signature is optional (K11 asks for it when primary_named_by is set)
                     if profile == "test-run" and f == "audit.jsonl":
                         continue  # judged below: FAIL for this profile
                     warn.append(f"{f}: unsigned")
             # 0.5, agent-work: the witness is never the auditor (OneDroid Indie VR-I11). The agent signs with the key its
             # machine enrolled; a witness signed by the same key, under any name, is the agent judging itself.
-            if profile in ("agent-work", "test-run") and allowed.exists() and isinstance(sigs, list):
+            # 0.6: the same rule for a witness of kind agent or model in every profile (a human self-audit keeps one signer)
+            ma_files = {f_ for f_, k_ in w_kind_file.items() if k_ in ("model", "agent")}
+            if (profile in ("agent-work", "test-run") or ma_files) and allowed.exists() and isinstance(sigs, list):
                 keys = {}
                 for l in allowed.read_text(encoding="utf-8", errors="replace").splitlines():
                     f_ = l.split()
@@ -838,10 +934,87 @@ def main(argv):
                 a_keys = set().union(*[keys.get((e.get("signer") or {}).get("name"), set()) for e in sigs if e.get("role") == "auditor"] or [set()])
                 for e in sigs:
                     if e.get("role") == "witness" and keys.get((e.get("signer") or {}).get("name"), set()) & a_keys:
-                        bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor ({profile}, VR-I11)")
+                        if profile in ("agent-work", "test-run"):
+                            bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor ({profile}, VR-I11)")
+                        elif e.get("file") in ma_files:
+                            bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor (kind {w_kind_file[e.get('file')]}, {profile})")
         if profile == "test-run" and "audit.jsonl" not in covered:
             bad.append("audit.jsonl: unsigned: the run record is a claim nobody stands behind (test-run needs the auditor's signature)")
-        R.add("K13", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(ok)} signature(s) verified, {len(warn)} note(s), {len(bad)} broken", bad + warn + ok)
+        # 0.6: a witness of kind model: its file is named for its manifest entry, and its principal is in the key list,
+        # bound to the header's model for the witness's started_at. --keys FILE is the published list (a broken binding fails);
+        # the snapshot's own keys/model-keys.jsonl is a copy of it (a broken binding there warns); neither at hand warns.
+        model_ws = [w for w in witnesses if w_kind.get(w.get("name")) == "model" and w.get("file") in w_kind_file]
+        agent_ws = [w for w in witnesses if w_kind.get(w.get("name")) == "agent" and w.get("file") in w_kind_file]
+        for w in model_ws + agent_ws:
+            if w.get("file") != f"witness/{w.get('name')}.jsonl":
+                (bad if fmt06 else warn).append(f"{w.get('file')}: the witness file's name is not its manifest name {w.get('name')!r} (witness/<name>.jsonl)")
+        if model_ws:
+            auth = keys_arg is not None
+            prob = bad if auth else warn
+            lst_p = keys_arg if auth else ((snap / KEY_LIST) if (snap / KEY_LIST).exists() else None)
+            label = f"--keys {keys_arg}" if auth else f"the snapshot's {KEY_LIST}"
+            entries = []
+            if lst_p is not None:
+                try:
+                    for ln in lst_p.read_text(encoding="utf-8").splitlines():
+                        if ln.strip():
+                            e_ = json.loads(ln)
+                            if not isinstance(e_, dict):
+                                raise ValueError("a line is not an object")
+                            entries.append(e_)
+                except (OSError, ValueError, UnicodeDecodeError) as e:
+                    prob.append(f"key list {lst_p} unreadable: {e}")
+                    lst_p = None
+            shipped = {}
+            if (snap / "allowed_signers").exists():
+                for l in (snap / "allowed_signers").read_text(encoding="utf-8", errors="replace").splitlines():
+                    f_ = l.split()
+                    if len(f_) >= 3 and not l.lstrip().startswith("#") and key_of(f_[1:]):
+                        for p_ in f_[0].split(","):
+                            shipped.setdefault(p_, set()).add(key_of(f_[1:]))
+            sig_list = sigs if (sig_p.exists() and isinstance(sigs, list)) else []
+            for w in model_ws:
+                wf_, hdr = w.get("file"), w_hdr[w.get("name")]
+                principal = next(((e.get("signer") or {}).get("name") for e in sig_list if isinstance(e, dict) and e.get("role") == "witness" and e.get("file") == wf_), None)
+                if lst_p is None:
+                    if not auth:
+                        warn.append(f"{wf_}: model principal {principal!r} not in a published key list (no --keys FILE and no {KEY_LIST} in the snapshot)")
+                    continue
+                if principal is None:
+                    prob.append(f"{wf_}: a model witness with no signature entry has no principal to look up in the key list")
+                    continue
+                cand = [e for e in entries if e.get("principal") == principal]
+                if not cand:
+                    prob.append(f"{wf_}: model principal {principal!r} not in a published key list ({label})")
+                    continue
+                best = None
+                for e in cand:
+                    why = []
+                    if e.get("model") != hdr.get("model"):
+                        why.append(f"the list binds it to model {e.get('model')!r}, the header says {hdr.get('model')!r}")
+                    st_, vf_, vt_ = parse_rfc3339(hdr.get("started_at")), parse_rfc3339(e.get("valid_from")), e.get("valid_to")
+                    if st_ is None:
+                        why.append(f"header started_at {hdr.get('started_at')!r} is not an RFC3339 time")
+                    elif vf_ is None:
+                        why.append(f"valid_from {e.get('valid_from')!r} is not an RFC3339 time")
+                    elif st_ < vf_:
+                        why.append(f"started_at {hdr.get('started_at')} is before valid_from {e.get('valid_from')}")
+                    elif vt_ is not None and parse_rfc3339(vt_) is None:
+                        why.append(f"valid_to {vt_!r} is neither null nor an RFC3339 time")
+                    elif vt_ is not None and st_ > parse_rfc3339(vt_):
+                        why.append(f"started_at {hdr.get('started_at')} is after valid_to {vt_}")
+                    listed = key_of(str(e.get("key", "")).split())
+                    if (snap / "allowed_signers").exists() and (listed is None or listed not in shipped.get(principal, set())):
+                        why.append("the key in the list is not the key of this principal in the shipped allowed_signers")
+                    if best is None or len(why) < len(best):
+                        best = why
+                    if not why:
+                        break
+                if best:
+                    prob.append(f"{wf_}: model principal {principal!r} ({label}): " + "; ".join(best))
+                else:
+                    bind_ok.append(f"{wf_}: principal {principal} bound to {hdr.get('model')} in {label}, window covers {hdr.get('started_at')}")
+        R.add("K13", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(ok)} signature(s) verified, {len(warn)} note(s), {len(bad)} broken", bad + warn + ok + bind_ok)
 
         # K14 anchors: each over the hash of a file in the folder
         anc_p = snap / "anchors.json"
