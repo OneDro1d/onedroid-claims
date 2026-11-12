@@ -916,8 +916,15 @@ def main(argv):
                     warn.append(f"{f}: unsigned")
             # 0.5, agent-work: the witness is never the auditor (OneDroid Indie VR-I11). The agent signs with the key its
             # machine enrolled; a witness signed by the same key, under any name, is the agent judging itself.
-            # 0.6: the same rule for a witness of kind agent or model in every profile (a human self-audit keeps one signer)
+            # 0.6: the same rule for a witness of kind agent or model in every profile (a human self-audit keeps one signer).
+            # 0.6 erratum 1 (12 Nov 2026): in the page profiles a self-audit by an AGENT keeps one signer too, when the manifest
+            # declares it: the witness is the primary, grading.kind is "self-audit" and grading.gates records the holdout
+            # (section 1); K13 reports it instead of failing. A model witness never shares the auditor's key (a model is nobody's
+            # self), a non-primary agent witness never does, and in agent-work and test-run no witness does (VR-I11).
             ma_files = {f_ for f_, k_ in w_kind_file.items() if k_ in ("model", "agent")}
+            prim_file = next((w.get("file") for w in witnesses if w.get("primary")), None)
+            gates_ = g.get("gates")
+            declared_self_audit = g.get("kind") == "self-audit" and isinstance(gates_, list) and len(gates_) > 0
             if (profile in ("agent-work", "test-run") or ma_files) and allowed.exists() and isinstance(sigs, list):
                 keys = {}
                 for l in allowed.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -937,7 +944,12 @@ def main(argv):
                         if profile in ("agent-work", "test-run"):
                             bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor ({profile}, VR-I11)")
                         elif e.get("file") in ma_files:
-                            bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor (kind {w_kind_file[e.get('file')]}, {profile})")
+                            k_ = w_kind_file[e.get("file")]
+                            if k_ == "agent" and e.get("file") == prim_file and declared_self_audit:
+                                ok.append(f"{e.get('file')}: self-audit by an agent: one signer for the auditor part and the primary witness, grading.kind self-audit, {len(gates_)} holdout gate(s) recorded (0.6 erratum 1)")
+                            else:
+                                bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor (kind {k_}, {profile})"
+                                           + ("; an agent keeps one signer only as the primary of a declared self-audit (grading.kind self-audit, grading.gates recorded)" if k_ == "agent" else ""))
         if profile == "test-run" and "audit.jsonl" not in covered:
             bad.append("audit.jsonl: unsigned: the run record is a claim nobody stands behind (test-run needs the auditor's signature)")
         # 0.6: a witness of kind model: its file is named for its manifest entry, and its principal is in the key list,
