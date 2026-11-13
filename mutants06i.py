@@ -97,6 +97,10 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        Traceback. Controls: sources[0].path null, grading.sessions null, grading.gates null and a witness score null give no shape line.
        The safety net: sources[0].n a list (no rule names it) gives "K0 FAIL: the checker stopped on a part of the folder it does not
        read (TypeError at check.py:<line>…", a SUMMARY line, exit 1, no Traceback (the committed checker: Traceback, no SUMMARY).
+  i2j  the eighteenth re-gate's finding X (13 Nov 2026 14:0xZ): check.py --json on FB with CHECK.json a directory: exactly ONE SUMMARY
+       line, ending FAIL, a K0 line naming "CHECK.json could not be written", exit 1, no Traceback (the committed checker: a PASS SUMMARY
+       first, then a second). The honest --json run: one SUMMARY, CHECK.json written and holding the same result. The K0 text of the
+       safety-net case (sources[0].n a list) names "<folder>", never the folder's absolute path.
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -754,6 +758,49 @@ def i2i(tmp, FB, committed):
            f"K0 lines {k0}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
 
 
+def i2j(tmp, FB, committed):
+    def summaries(text):
+        return [l for l in text.splitlines() if l.startswith("SUMMARY")]
+
+    d = f.copy_of(tmp, FB, "i2j_check_json_a_directory")
+    (d / "CHECK.json").mkdir()
+    r = subprocess.run([sys.executable, "-I", str(HERE / "check.py"), str(d), "--json"], capture_output=True, text=True)
+    sm = summaries(r.stdout)
+    k0 = [l for l in r.stdout.splitlines() if l.startswith("K0 FAIL") and "CHECK.json could not be written" in l]
+    leaked = str(d) in r.stdout or str(d.resolve()) in r.stdout or str(tmp) in r.stdout
+    ok = len(sm) == 1 and sm[0].endswith("FAIL") and len(k0) == 1 and r.returncode == 1 and "Traceback" not in r.stderr and not leaked
+    details = [f"SUMMARY lines: {sm}", f"K0: {k0}", f"absolute path in stdout: {leaked}"]
+    if committed is not None:
+        rc = subprocess.run([sys.executable, "-I", str(committed), str(d), "--json"], capture_output=True, text=True)
+        details.append(f"committed checker: SUMMARY lines {summaries(rc.stdout)}, exit {rc.returncode}")
+    report("i2j_check_json_unwritable_one_summary", ok, "exactly one SUMMARY ending FAIL, one K0 'CHECK.json could not be written' line, exit 1, no Traceback",
+           f"SUMMARY lines {len(sm)}, last {sm[-1] if sm else None}, K0 {len(k0)}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+
+    d = f.copy_of(tmp, FB, "i2j_json_honest")
+    r = subprocess.run([sys.executable, "-I", str(HERE / "check.py"), str(d), "--json"], capture_output=True, text=True)
+    sm = summaries(r.stdout)
+    try:
+        cj = json.loads((d / "CHECK.json").read_text(encoding="utf-8"))
+    except Exception:
+        cj = {}
+    res = sm[0].rsplit(": ", 1)[-1] if sm else None
+    ok = len(sm) == 1 and cj.get("result") in ("PASS", "WARN", "FAIL") and (res == "FAIL") == (cj.get("result") == "FAIL") and "CHECK.json written" in r.stdout
+    report("i2j_json_honest_one_summary", ok, "one SUMMARY, CHECK.json written, its result agreeing with the SUMMARY",
+           f"SUMMARY lines {len(sm)}, SUMMARY result {res}, CHECK.json result {cj.get('result')}, written line {'CHECK.json written' in r.stdout}")
+
+    d = f.copy_of(tmp, FB, "i2j_k0_text_names_no_path")
+    mp = d / "manifest.json"
+    M = json.loads(mp.read_text(encoding="utf-8"))
+    M["sources"][0]["n"] = ["x"]
+    mp.write_text(json.dumps(M, indent=1) + "\n", encoding="utf-8")
+    r = subprocess.run([sys.executable, "-I", str(HERE / "check.py"), str(d)], capture_output=True, text=True)
+    k0 = [l for l in r.stdout.splitlines() if l.startswith("K0 FAIL")]
+    leaked = str(d) in r.stdout or str(d.resolve()) in r.stdout or str(tmp) in r.stdout
+    ok = len(k0) == 1 and not leaked and len(summaries(r.stdout)) == 1
+    report("i2j_k0_text_names_no_absolute_path", ok, "one K0 line, no absolute path of the folder or its parent in stdout, one SUMMARY",
+           f"K0 {len(k0)}, path in stdout {leaked}, SUMMARY lines {len(summaries(r.stdout))}", k0)
+
+
 def i4h(tmp, fpre, FS, committed_dir):
     if FS is None:
         f.not_built("i4h_presence_not_truthiness", "sign.py and add_witness.py refuse by name, nothing written")
@@ -850,6 +897,7 @@ def main():
         i4g(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i2h(tmp, FB, committed)
         i2i(tmp, FB, committed)
+        i2j(tmp, FB, committed)
         i4h(tmp, fpre, FS, committed_dir)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
