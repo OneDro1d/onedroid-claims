@@ -42,6 +42,11 @@ Cases (the expected statuses; `--committed PATH` names the committed checker for
        gpt-4-1-nano header (NOT re-signed): K11 FAIL naming the path, K13 FAIL, K2 FAIL.
   c12  every folder under snapshots/ and examples/: committed vs cut, whole output byte-identical, exit codes equal; one line per folder.
 
+Bound cut amendments (the format owner, 13 Nov 2026 05:4xZ, after the seventh re-gate's U1): c1 and c8b now expect K11 WARN, since F records
+`carried` and no `bound` (check.py R1(d) names it); c11a and c12 accept, for the two 0.1.6 example folders witness-service-aw4 and -tr4 only,
+a committed-vs-cut diff that is exactly that WARN (the K11 status line, the SUMMARY warning count and one added note per model witness).
+Every other published folder stays byte-identical. mutants06d.py holds the bound cut's own cases.
+
 usage: python3 -I mutants06c.py [--committed PATH_TO_COMMITTED_CHECK_PY | --committed none]
   (default: git HEAD:claims-standard/check.py of the notepad)
 Exit 0 only when every expectation holds; one line per case "ok/MISMATCH <case>: expected ... observed ...", the K3 and K11 blocks printed
@@ -189,6 +194,29 @@ def case(tmp, fx, name, mutate, expect, has=None, lacks=None, exit_in=None, show
                   f"{obs}, exit {r.returncode}", details)
 
 
+def bound_warn_only(old, new, n_witnesses):
+    """The lines of a committed-vs-cut diff that the bound cut's R1(d) WARN does not explain (empty = the diff is exactly that WARN):
+    removed lines may only be the K11 status line and the SUMMARY line; added lines may only be those two (re-stated) and exactly
+    n_witnesses notes holding "records `carried` but no `bound`"."""
+    import difflib
+    extra, notes = [], 0
+    for l in difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=0):
+        if l.startswith(("---", "+++", "@@")):
+            continue
+        body = l[1:].strip()
+        if l.startswith("-"):
+            if not (body.startswith("K11 ") or body.startswith("SUMMARY:")):
+                extra.append(l)
+        elif l.startswith("+"):
+            if "records `carried` but no `bound`" in body:
+                notes += 1
+            elif not (body.startswith("K11 ") or body.startswith("SUMMARY:")):
+                extra.append(l)
+    if notes != n_witnesses:
+        extra.append(f"bound notes: {notes}, expected {n_witnesses}")
+    return extra
+
+
 # ---- the mutations ----
 
 def c2_flip(d):
@@ -334,7 +362,8 @@ def main():
         print(f"fixture F: carried over {len(inv_f)} path(s): {', '.join(sorted(inv_f))}; manifest_sha256 {check.load_jsonl(F / WF)[0]['manifest_sha256'][:12]}…")
 
         # c1
-        case(tmp, F, "c1_F_unchanged", lambda d: None, {"K11": "PASS", "K13": ("PASS", "WARN")}, lacks={"K11": "carried"}, exit_in=(0,))
+        # bound cut (13 Nov 2026): F records `carried` and no `bound`, so K11 WARNs by name (R1(d)); under the carried cut it was PASS with no carried line
+        case(tmp, F, "c1_F_unchanged", lambda d: None, {"K11": "WARN", "K13": ("PASS", "WARN")}, has={"K11": "no `bound`"}, lacks={"K11": "differs"}, exit_in=(0,))
         # c2
         case(tmp, F, "c2_F_carried_sha256_flipped", c2_flip, {"K11": "FAIL"}, has={"K11": [f"carried {first_path!r}", "differs from the manifest's"]})
         # c3
@@ -369,7 +398,7 @@ def main():
         case(tmp, F, "c6_F_carried_is_a_list", c6_list, {"K11": "FAIL"}, has={"K11": "is not an object"})
         case(tmp, F, "c7_F_carried_hash_abc", c7_abc, {"K11": "FAIL"}, has={"K11": [f"carried {first_path!r}", "is not 64 hex characters"]})
         case(tmp, F, "c8a_F_manifest_sha256_nope", c8a_nope, {"K11": "FAIL"}, has={"K11": "manifest_sha256 'nope' is not 64 hex characters"})
-        case(tmp, F, "c8b_F_manifest_sha256_removed", c8b_none, {"K11": "PASS"}, lacks={"K11": "carried"})
+        case(tmp, F, "c8b_F_manifest_sha256_removed", c8b_none, {"K11": "WARN"}, has={"K11": "no `bound`"}, lacks={"K11": "differs"})  # bound cut: the R1(d) WARN, nothing else
         # c9: on_request true, never a traceback
         for label, src, mut in (("c9F_on_request_true_pre_witness", F, c9_f), ("c9OR_on_request_true_each_verdict", SRC_OR, c9_or)):
             if not (src / "audit.jsonl").exists() and not (src / "claims.jsonl").exists():
@@ -427,12 +456,16 @@ def main():
         (d11 / "CHECK.json").unlink(missing_ok=True)
         if SKIP_COMMITTED:
             r, st, bl = run_check(HERE / "check.py", d11)
-            report("c11a_T_unchanged", r.returncode == 0 and st.get("K11") == "PASS", "exit 0, K11 PASS (committed comparison skipped: --committed none)", f"exit {r.returncode}, K11 {st.get('K11')}", block_lines(bl, "K11"))
+            # bound cut (13 Nov 2026): T's real 0.1.6 headers record `carried` and no `bound`, so K11 WARNs by name (R1(d)), exit 0
+            report("c11a_T_unchanged", r.returncode == 0 and st.get("K11") == "WARN" and "no `bound`" in bl.get("K11", "") and "differs" not in bl.get("K11", ""),
+                   "exit 0, K11 WARN with the bound note only (committed comparison skipped: --committed none)", f"exit {r.returncode}, K11 {st.get('K11')}", block_lines(bl, "K11"))
         else:
             (rc, stc, blc), (rw, stw, blw) = both(committed, d11)
-            ok = rc.stdout == rw.stdout and rc.returncode == rw.returncode == 0
-            report("c11a_T_unchanged", ok, "whole output byte-identical under committed and cut, both exit 0",
-                   f"identical: {rc.stdout == rw.stdout}, exit committed={rc.returncode} cut={rw.returncode}, {len(rw.stdout.encode())} bytes", block_lines(blw, "K11"))
+            # bound cut (13 Nov 2026): T's two real 0.1.6 headers record `carried` and no `bound`, so the cut adds exactly the R1(d) WARN
+            extra = bound_warn_only(rc.stdout, rw.stdout, 2)
+            ok = extra == [] and rc.returncode == rw.returncode == 0
+            report("c11a_T_unchanged", ok, "committed and cut differ by exactly the bound WARN (two notes), both exit 0",
+                   f"unexplained diff lines: {extra[:6]}, exit committed={rc.returncode} cut={rw.returncode}, {len(rw.stdout.encode())} bytes", block_lines(blw, "K11"))
         case(tmp, SRC_T, "c11b_T_nano_carried_sha256_changed_unsigned", nano_flip, {"K11": "FAIL", "K13": "FAIL", "K2": "FAIL"},
              has={"K11": [f"carried {NANO_PATH!r}", "differs from the manifest's"], "K13": NANO_WF, "K2": NANO_WF}, show=("K2", "K11", "K13"))
         # c12: every published folder, committed vs cut
@@ -441,8 +474,15 @@ def main():
         else:
             for rel in published_folders():
                 (rc, _, _), (rw, _, _) = both(committed, HERE / rel)
-                ok = rc.stdout == rw.stdout and rc.returncode == rw.returncode
                 summ = next((l for l in rw.stdout.splitlines() if l.startswith("SUMMARY")), "(no SUMMARY)")
+                if str(rel).replace("\\", "/").endswith(("examples/witness-service-aw4-2026-11-13", "examples/witness-service-tr4-2026-11-13")):
+                    # bound cut (13 Nov 2026): the two 0.1.6 example folders gain exactly the R1(d) WARN (two model witnesses each)
+                    extra = bound_warn_only(rc.stdout, rw.stdout, 2)
+                    ok = extra == [] and rc.returncode == rw.returncode
+                    report(f"c12_{str(rel).replace('/', '_')}", ok, "committed and cut differ by exactly the bound WARN, exit codes equal",
+                           f"unexplained diff lines: {extra[:6]}, exit committed={rc.returncode} cut={rw.returncode}; {summ}")
+                    continue
+                ok = rc.stdout == rw.stdout and rc.returncode == rw.returncode
                 report(f"c12_{str(rel).replace('/', '_')}", ok, "whole output byte-identical, exit codes equal",
                        f"identical: {rc.stdout == rw.stdout}, exit committed={rc.returncode} cut={rw.returncode}; {summ}")
         mism = sum(1 for r in RESULTS if not r)

@@ -215,3 +215,32 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    family's reputation; (b) `service.json` (and so the record) names the plant fixture and date each served model last passed, so a reader
    can see what the admission rested on; (c) the decision models answered 0 of 21 because they return no text and read no instruction as an
    instruction: a revision may weigh a chat model's EVIDENCED by a decision model's agreement (the gate's option (c)), noted here, not adopted.
+   **(b) and (c) adopted by the service, 0.1.8 (13 Nov 2026 05:4xZ, from the seventh re-gate's H2):** each served model's configuration carries
+   `plant_regression` {fixture, date, result}, shown on /models and in `service.json` per model; and a chat model's EVIDENCED stands only where a
+   decision model that ran in the same job answered EVIDENCED on the row (otherwise UNDECIDED with the chat model's note kept), a public request
+   must name a decision model. The seventh re-gate showed why a served list is not a defence: gemini-2.5-flash-lite (0 of 21 in round six)
+   signed EVIDENCED on a plain-English and a German plant, and gpt-4.1-mini, flash-lite and jev-1.14 on a planted JSON verdict object (5 of 10).
+   (a) stays open for the SPEC text.
+28. ~~**`carried` binds bytes, not which source entry a pointer resolved through**~~ **Adopted in the bound cut of 13 Nov 2026 05:4xZ** (the format
+   owner, from the claims session's seventh re-gate of the witness service, item U1). A forger re-published the genuine audit.jsonl beside a
+   manifest whose `prod/config.yaml` entry named the genuine `dev/config.yaml` file with dev's hash: every carried hash was genuine, the models
+   read dev's line as prod's and signed EVIDENCED, and add_witness.py and K11 passed the insertion into the genuine record. The cut: every
+   witness header and `service.json` carry `bound` {section: sha256} over subject, sources, pages, grading.profile and grading.sessions in
+   canonical JSON (`json.dumps(sort_keys=True, separators=(',', ':'), ensure_ascii=False)`, UTF-8, an absent section as `null`); K11 recomputes it
+   from the record's own manifest and FAILs a mismatch by name (exactly the five keys, 64 hex), WARNs a model witness with `carried` and no
+   `bound` over an evidence-shaped part, and FAILs an EVIDENCED or CONTRADICTED decision whose file pointer resolves through the record's
+   manifest to a file the witness did not carry (this catches the forged insertion even with headers written before `bound` existed);
+   add_witness.py refuses a `bound` mismatch before writing. `mutants06d.py` holds the cases; `fixtures/aw10-regate7-forged-insertion-u2-2026-11-13`
+   is the gate's forged insertion, which the carried-cut checker passed and this one fails. The two 0.1.6 example folders gain one WARN each.
+   Still open: what binds the sources list to the AUDITOR is the published snapshot and the reader's trust in the service's key (/keys); the
+   auditor's own signature over the sources is item 25b.
+29. **Evidence text that names a verdict addresses the witness, not the claim** (the format owner, 13 Nov 2026 05:4xZ, from the seventh re-gate's
+   H2 and the gate's option (b)). The witness service (0.1.8) decides a row UNDECIDED by rule for every model, with no model call, when the
+   text a readable pointer shows (a file's lines, a command or test output, an artefact, a session record) or a candidate's quote holds one
+   of the four verdict words EVIDENCED, CONTRADICTED, UNDECIDED or NO EVIDENCE PUBLISHED, upper case, as whole words; the note names the
+   pointer and the word. Not scanned, on purpose: the claim text and the page context (a page about this format would make every row
+   UNDECIDED), and a generic `verdict` key (a test-run result legitimately holds `"verdict": "PASS"` per check). Known gaps, measured not
+   fixed: a zero-width character or a homoglyph inside the word, a paraphrase ("mark it as proven"), a plant in the page context alone (the
+   seventh re-gate's P14 held 6 of 6 without the rule). Items for the revision: (a) section 14's rendering paragraph says so (one sentence
+   added in the bound cut); (b) a renderer may widen the word list but never narrow it; (c) a reader of a record sees the rule in
+   `service.json` (`vocabulary_rule`: the rows and the hits) and in each row's note.
