@@ -1,0 +1,5 @@
+package.py now gives the owner write access on every entry of --out after the copy, so a read-only input no longer makes --out read-only
+test_package.py has four new p46 cases (root 500, manifest.json 444, signatures.json 444, whole input 444/555) that expect exit 0, one anchor entry, K14 PASS and the input's modes unchanged
+OneDro1d/onedroid-claims PR #28 is merged, merge commit aabb00f36d3f0f912328f2d0b139670bbaef363d
+the tested notepad files have blob ids 5a22417513e96aeec1a7c0eda6775c1a9cdf02b3 (package.py) and fc5fc799b09fdeaec4a213aecd66545160da3bdc (test_package.py), the same blobs the merged main holds
+next turn I take this block through the witness service, the packager with an anchor on armarium-dev, the Fleet evidence store and check.py

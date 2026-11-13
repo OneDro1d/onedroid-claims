@@ -1,0 +1,109 @@
+{
+  "format": "claims-snapshot/0.6",
+  "subject": {
+    "parts": [],
+    "publisher": "onedroid-m-1aeea1f872a2cc18869da8230ebe735a",
+    "session_id": "faed1a33-924a-4fdd-a5d5-48bbfbddfc59",
+    "title": "Claims of agent session faed1a33-924a-4fdd-a5d5-48bbfbddfc59 at turn end #312",
+    "turn_end": 312,
+    "url": null
+  },
+  "taken_at": "2026-11-13T16:58:55Z",
+  "pages": [
+    {
+      "file": "page.txt",
+      "lines": 5,
+      "note": "the claims' text as the agent wrote it in its claims block (audit.jsonl), one per line; the kit keeps the block, not the whole reply",
+      "sha256": "248407f97e1b578130736b6ae8f4448e262813b95223f262ce7b8d5f886f1391"
+    }
+  ],
+  "sources": [
+    {
+      "copy": "hash-only",
+      "file": null,
+      "n": 1,
+      "note": "holds a credential (secret-assignment): only its hash is published",
+      "path": "claims-standard/package.py",
+      "repo": {
+        "commit": "1382e6ac789ea59f0dbb7463ff049fda214b106c",
+        "path": "claims-standard/package.py"
+      },
+      "role": "file",
+      "sha256": "141ba08d1135962a9c9339c0d1ae0fe376458dec2b763a07a3963381a145b327",
+      "url": null
+    },
+    {
+      "copy": "hash-only",
+      "file": null,
+      "n": 2,
+      "note": "holds a credential (secret-assignment): only its hash is published",
+      "path": "claims-standard/test_package.py",
+      "repo": {
+        "commit": "1382e6ac789ea59f0dbb7463ff049fda214b106c",
+        "path": "claims-standard/test_package.py"
+      },
+      "role": "file",
+      "sha256": "339a7c1e7a8abe18e3fdcc6d1c1494d3d7c572ec31035ba3199d67c074e2efb6",
+      "url": null
+    },
+    {
+      "copy": "text",
+      "file": "sources/outputs/8812483cfbfa359bef6bb0510f45ea8aa3cc178a435d189b11e63ef44ca287f6.txt",
+      "n": 3,
+      "note": "an output the developer handed in; a command or test pointer names its sha256",
+      "role": "output",
+      "sha256": "8812483cfbfa359bef6bb0510f45ea8aa3cc178a435d189b11e63ef44ca287f6",
+      "url": null
+    },
+    {
+      "copy": "text",
+      "file": "sources/outputs/dcf1713cc912e09ee454416a3681646e2fd7ceb31cc921312a4708e69c766adb.txt",
+      "n": 4,
+      "note": "an output the developer handed in; a command or test pointer names its sha256",
+      "role": "output",
+      "sha256": "dcf1713cc912e09ee454416a3681646e2fd7ceb31cc921312a4708e69c766adb",
+      "url": null
+    }
+  ],
+  "grading": {
+    "auditor": {
+      "file": "audit.jsonl",
+      "model": "claude-code",
+      "name": "agent",
+      "note": "the agent that did the work wrote this block at its turn end; signed by the machine's enrolled key, the human named stands behind it",
+      "sha256": "ea2b9f5ec0935f212dfd267dd1b0043fb36834b17a9260c9fb14c20d250cbc6e",
+      "signer": "onedroid-m-1aeea1f872a2cc18869da8230ebe735a \u003cSHA256:lRaFUJeHdaraqx0wnzTFxJJtqWZiPcx7bSLTUwCym2k\u003e"
+    },
+    "gates": [],
+    "kind": "pre-witness",
+    "profile": "agent-work",
+    "rounds": [],
+    "sessions": [
+      {
+        "available": "on request",
+        "complete": true,
+        "gaps": 0,
+        "held_by": "onedroid-m-1aeea1f872a2cc18869da8230ebe735a",
+        "machine_id": "m-1aeea1f872a2cc18869da8230ebe735a",
+        "record_sha256": "7cf620583c962053531215a8bec616da22e159e246a1598feae0ec022be37558",
+        "record_upto_sequence": 312,
+        "recorder": "onedroid-indie 0.1.0-dev (e8d96b4)",
+        "role": "auditor",
+        "session_id": "faed1a33-924a-4fdd-a5d5-48bbfbddfc59"
+      }
+    ],
+    "witnesses": []
+  },
+  "counts": {
+    "checkable": 4,
+    "claims": 5
+  },
+  "files": {
+    "audit.jsonl": "ea2b9f5ec0935f212dfd267dd1b0043fb36834b17a9260c9fb14c20d250cbc6e",
+    "audit.jsonl.sig": "50f5e121113007f761e9237c31582213fc91f8eff56d08bf6af53ae69adf3f6c",
+    "page.txt": "248407f97e1b578130736b6ae8f4448e262813b95223f262ce7b8d5f886f1391",
+    "sources/outputs/8812483cfbfa359bef6bb0510f45ea8aa3cc178a435d189b11e63ef44ca287f6.txt": "8812483cfbfa359bef6bb0510f45ea8aa3cc178a435d189b11e63ef44ca287f6",
+    "sources/outputs/dcf1713cc912e09ee454416a3681646e2fd7ceb31cc921312a4708e69c766adb.txt": "dcf1713cc912e09ee454416a3681646e2fd7ceb31cc921312a4708e69c766adb"
+  },
+  "bundled_with": "onedroid-indie 0.1.0-dev (e8d96b4)"
+}
