@@ -138,7 +138,10 @@ def url_problem(url):
 
 def special_entry(src):
     """(path, why) for the first entry under src that is not a readable directory or a readable regular file (a symbolic link, a
-    FIFO, a socket, a device, or a mode that hides it), else None."""
+    FIFO, a socket, a device, or a mode that hides it), else None. The root itself is checked first: os.walk skips a root it
+    cannot list without a word (round 5, S15b)."""
+    if not os.access(src, os.R_OK | os.X_OK):
+        return pathlib.Path(src), "a folder that cannot be listed"
     for root, dirs, files in os.walk(src, followlinks=False):
         for name in dirs + files:
             q = pathlib.Path(root) / name
@@ -314,8 +317,8 @@ def main(argv):
         return 2
     bad = special_entry(src)
     if bad is not None:
-        print(f"refused: the input holds {bad[0].relative_to(src)}, which is {bad[1]} (only readable directories and regular files are "
-              "packaged), nothing written", file=sys.stderr)
+        what = f"the input {src} is" if bad[0] == pathlib.Path(src) else f"the input holds {bad[0].relative_to(src)}, which is"
+        print(f"refused: {what} {bad[1]} (only readable directories and regular files are packaged), nothing written", file=sys.stderr)
         return 2
     anc_in = src / "anchors.json"
     if os.path.lexists(anc_in) and (anc_in.is_symlink() or not anc_in.is_file()):

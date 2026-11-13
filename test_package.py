@@ -740,6 +740,21 @@ def main():
             ok = rc == 2 and not out.exists() and not t and "locked" in err
             report(name, ok, "exit 2, --out not created, no traceback, stderr names the path", f"exit {rc}, out {out.exists()}, traceback {t}, stderr: {err.strip()[-160:]}")
 
+        # p45 (round 5, S15b): the input ROOT can be entered but not listed (mode 100): refused by name, exit 2, no traceback
+        inp = tmp / "input-p45"
+        shutil.copytree(fpre, inp)
+        inp.chmod(0o100)
+        out = tmp / "out-p45"
+        try:
+            r = run(inp, out, [ans], timeout=30)
+            rc, t, err = r.returncode, tb(r), r.stderr
+        except subprocess.TimeoutExpired:
+            rc, t, err = "timeout", False, ""
+        inp.chmod(0o700)
+        ok = rc == 2 and not out.exists() and not t and "input-p45" in err
+        report("p45_input_root_not_listable", ok, "exit 2, --out not created, no traceback, stderr names the root",
+               f"exit {rc}, out {out.exists()}, traceback {t}, stderr: {err.strip()[-160:]}")
+
         # p44 (round 4, U01): a host with an empty or dash-edged label: refused at read, exit 2, no traceback
         for name, u in (("p44_host_empty_label", "https://a..b:9443"), ("p44b_host_only_dot", "https://.:9443"),
                         ("p44c_host_trailing_dot", "https://localhost.:9443"), ("p44d_host_label_leading_dash", "https://-a.b:9443"),
