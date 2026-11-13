@@ -388,6 +388,10 @@ def main(argv):
         print("usage: --anchor-retries is a whole number of at least 0 and --anchor-wait a finite number of seconds of at least 0", file=sys.stderr)
         return 2
     shutil.copytree(src, out)
+    # copytree copies the input's modes, so a read-only input made a read-only --out that add_witness could not write (round 6, R03).
+    # --out is this packager's own new folder: give its owner write access on every entry (the input itself is never touched).
+    for p in [out, *out.rglob("*")]:
+        p.chmod(p.stat().st_mode | (0o700 if p.is_dir() else 0o600))
     for p in (out / "CHECK.json", out / "CHECK.txt"):
         p.unlink(missing_ok=True)
     for a in arg(argv, "--answer", many=True):

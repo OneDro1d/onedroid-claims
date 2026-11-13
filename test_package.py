@@ -755,6 +755,49 @@ def main():
         report("p45_input_root_not_listable", ok, "exit 2, --out not created, no traceback, stderr names the root",
                f"exit {rc}, out {out.exists()}, traceback {t}, stderr: {err.strip()[-160:]}")
 
+        # p46 (round 6, R03 and probes Z01-Z03): a READ-ONLY input is a valid input. --out is the packager's own folder, so it must
+        # stay writable whatever the input's modes: exit 0, one anchor entry, K14 PASS, no traceback, the input's modes unchanged
+        def ro_input(name, how):
+            inp = tmp / f"input-{name}"
+            shutil.copytree(fpre, inp)
+            if how == "root500":
+                inp.chmod(0o500)
+            elif how in ("manifest444", "signatures444"):
+                (inp / (how[:-3] + ".json")).chmod(0o444)
+            else:
+                for p in sorted(inp.rglob("*"), key=lambda x: -len(x.parts)):
+                    p.chmod(0o555 if p.is_dir() else 0o444)
+                inp.chmod(0o555)
+            return inp
+
+        def rw_again(inp):
+            inp.chmod(0o700)
+            for p in inp.rglob("*"):
+                p.chmod(0o700 if p.is_dir() else 0o600)
+
+        for name, how in (("p46_input_root_read_only", "root500"), ("p46b_manifest_read_only", "manifest444"),
+                          ("p46c_signatures_read_only", "signatures444"), ("p46d_whole_input_read_only", "all")):
+            inp = ro_input(name, how)
+            modes = {str(p.relative_to(inp)): p.stat().st_mode for p in [inp, *inp.rglob("*")]}
+            fk = LandedFake()
+            fk.statuses = [200]
+            out = tmp / f"out-{name}"
+            try:
+                r = run(inp, out, [ans], tok, fk.url, timeout=60)
+                rc, t, so, err = r.returncode, tb(r), r.stdout, r.stderr
+            except subprocess.TimeoutExpired:
+                rc, t, so, err = "timeout", False, "", ""
+            fk.close()
+            same = modes == {str(p.relative_to(inp)): p.stat().st_mode for p in [inp, *inp.rglob("*")]}
+            try:
+                anc = json.loads((out / "anchors.json").read_text()) if (out / "anchors.json").exists() else None
+            except ValueError:
+                anc = None
+            rw_again(inp)
+            ok = rc == 0 and not t and isinstance(anc, list) and len(anc) == 1 and "K14 PASS" in so and same
+            report(name, ok, "exit 0, no traceback, one anchor entry, K14 PASS, the input's modes unchanged",
+                   f"exit {rc}, traceback {t}, anchors {len(anc) if isinstance(anc, list) else anc}, K14 PASS {'K14 PASS' in so}, modes same {same}, stderr: {err.strip()[-160:]}")
+
         # p44 (round 4, U01): a host with an empty or dash-edged label: refused at read, exit 2, no traceback
         for name, u in (("p44_host_empty_label", "https://a..b:9443"), ("p44b_host_only_dot", "https://.:9443"),
                         ("p44c_host_trailing_dot", "https://localhost.:9443"), ("p44d_host_label_leading_dash", "https://-a.b:9443"),
