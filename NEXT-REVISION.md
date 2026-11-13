@@ -105,6 +105,16 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    from the primary's entry, `grading.kind` by the signer rule, `grading.primary_named_by`, refreshes the manifest's hashes and signs the
    manifest, refusing a folder that already has a primary or whose `grading.kind` is not `pre-witness`, and re-runs the checker. Until it
    exists, a witnessed turn end is bundled complete by the kit (`onedroid claims bundle`) and a pre-witness folder stays pre-witness. The
-   evidence service's version rule (Talos's design of the same night) follows the two allowed changes: `manifest.json`, `signatures.json`,
-   `allowed_signers` and `CHECK.json` may change between a parent and its version, `claims.jsonl` may appear once, everything else the
-   parent lists is byte-identical, and a version of any other shape is refused.
+   evidence service's version rule (Talos's design of the same night) follows the two allowed changes: `manifest.json`, `manifest.json.sig`
+   (added by Talos on the first real pair: it appears with the first manifest signature and changes with every later allowed change),
+   `signatures.json`, `allowed_signers` and `CHECK.json` may change between a parent and its version, `claims.jsonl` may appear once,
+   everything else the parent lists is byte-identical, and a version of any other shape is refused.
+20. **K2 names the auditor part and a dict-shaped `files`** (the gate of Indie #71, 12 Nov 2026 23:5xZ, withheld case W7). One byte of
+   `audit.jsonl` changed after the write is caught by K11 (`grading.auditor.sha256`) and K13 (the signature), but K2 prints
+   "PASS: 3 files named, hashes match": `check.py` K2 hashes `pages[].file`, `sources[].file`, `claims.jsonl` (not in pre-witness) and
+   `files` only when it is a LIST (check.py 380 to 393), while the kit's writer (and the agent-work example) carry `files` as an OBJECT
+   (file to sha256), so neither `audit.jsonl` nor the object's entries are in K2's list. No trust gap, a naming gap: the next checker cut
+   reads `files` in both shapes, adds `audit.jsonl` through `grading.auditor.sha256` and the witness files through their entries, and
+   says so in K2's text. It changes K2's count on every 0.4 and later folder, so it goes with the next cut and its repin, not alone.
+   Also from the same gate: Indie's env var `ONEDROID_CHECK_PY` is a PATH to the checker, not its hash (18 tests fail with "can't open
+   file" when given the hash); the kit's docs should say so.
