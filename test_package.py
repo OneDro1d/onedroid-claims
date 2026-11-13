@@ -718,6 +718,37 @@ def main():
             ok = r.returncode == 1 and f"{st} {w}" in r.stderr
             report(name, ok, f"exit 1, stderr names {st} {w}", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
 
+        # p43 (round 4, S03/S04): an unreadable file or directory in the input: refused by name before the copy, exit 2, no traceback
+        for name, rel, isdir in (("p43_unreadable_file_in_input", "sources/files/locked.txt", False),
+                                 ("p43b_unreadable_dir_in_input", "sources/locked", True)):
+            inp = tmp / f"input-{name}"
+            shutil.copytree(fpre, inp)
+            q = inp / rel
+            if isdir:
+                q.mkdir(parents=True)
+                (q / "inside.txt").write_text("x\n", encoding="utf-8")
+            else:
+                q.write_text("x\n", encoding="utf-8")
+            q.chmod(0)
+            out = tmp / f"out-{name}"
+            try:
+                r = run(inp, out, [ans], timeout=30)
+                rc, t, err = r.returncode, tb(r), r.stderr
+            except subprocess.TimeoutExpired:
+                rc, t, err = "timeout", False, ""
+            q.chmod(0o700)
+            ok = rc == 2 and not out.exists() and not t and "locked" in err
+            report(name, ok, "exit 2, --out not created, no traceback, stderr names the path", f"exit {rc}, out {out.exists()}, traceback {t}, stderr: {err.strip()[-160:]}")
+
+        # p44 (round 4, U01): a host with an empty or dash-edged label: refused at read, exit 2, no traceback
+        for name, u in (("p44_host_empty_label", "https://a..b:9443"), ("p44b_host_only_dot", "https://.:9443"),
+                        ("p44c_host_trailing_dot", "https://localhost.:9443"), ("p44d_host_label_leading_dash", "https://-a.b:9443"),
+                        ("p44e_host_label_too_long", "https://" + "a" * 64 + ".b:9443")):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], atok, u)
+            ok = r.returncode == 2 and not out.exists() and not tb(r)
+            report(name, ok, "exit 2, --out not created, no traceback", f"exit {r.returncode}, out {out.exists()}, traceback {tb(r)}, stderr: {r.stderr.strip()[-160:]}")
+
         # p42: a tx_hash that shares a run of 7 hex with the secret by chance is still recorded (the run rule is 8)
         tx7 = (secret[:7] + "1" * 64)[:64]
         if longest_run(atok_v, tx7) == 7:
