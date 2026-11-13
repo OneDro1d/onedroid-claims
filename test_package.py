@@ -102,16 +102,16 @@ def tree(d):
     return {str(q.relative_to(d)): sha256(q) for q in sorted(pathlib.Path(d).rglob("*")) if q.is_file()}
 
 
-def run(parent, out, answers, tokfile=None, url=None, extra=(), no_allow_http=False):
+def run(parent, out, answers, tokfile=None, url=None, extra=(), no_allow_http=False, chain=CHAIN, timeout=None):
     cmd = [sys.executable, "-I", str(HERE / "package.py"), str(parent), "--out", str(out), "--key", str(m.KEYS["adder"]), "--identity", m.ADDER]
     for a in answers:
         cmd += ["--answer", str(a)]
     if url:
-        cmd += ["--anchor-url", url, "--anchor-chain", CHAIN, "--anchor-token-file", str(tokfile), "--anchor-wait", "0"]
+        cmd += ["--anchor-url", url, "--anchor-chain", chain, "--anchor-token-file", str(tokfile), "--anchor-wait", "0"]
         if url.startswith("http://") and not no_allow_http:
             cmd += ["--anchor-allow-http"]  # the fakes speak plain http; a real run refuses it (p16)
     cmd += list(extra)
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 def summary(text):
@@ -518,6 +518,135 @@ def main():
         ok = not leaked(r) and not tb(r)
         report("p27_echoed_token_in_landed_ref_not_printed", ok, "the token absent from stdout and stderr, no traceback",
                f"exit {r.returncode}, leaked {leaked(r)}, traceback {tb(r)}")
+
+        # p28 to p37: the packager re-gate's findings (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d-regate/RESULT.md)
+        def anchors_of(out):
+            p = out / "anchors.json"
+            return p.read_text(encoding="utf-8") if p.is_file() else ""
+
+        # p28 (G01): a token made only of [a-z_] echoed as the error of a 401 and as the state of a 503: never printed, whole or in part
+        wtok_v = "tok_" + "qwertyuiopasdfghjklzxcvbnmqwer"
+        wtok = tmp / "anchor-word.token"
+        wtok.write_text(wtok_v + "\n", encoding="utf-8")
+        for name, script in (("p28_word_token_echoed_as_401_error", lambda n, m_, p, h, b: (401, js({"error": wtok_v}), {})),
+                             ("p28b_word_token_echoed_as_503_state", lambda n, m_, p, h, b: (503, js({"state": wtok_v}), {})),
+                             ("p28c_word_token_piece_echoed_as_error", lambda n, m_, p, h, b: (401, js({"error": wtok_v[4:20]}), {}))):
+            fk = ScriptFake(script)
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], wtok, fk.url, ["--anchor-retries", "1"])
+            fk.close()
+            lk = wtok_v in r.stdout + r.stderr or wtok_v[4:20] in r.stdout + r.stderr
+            ok = r.returncode in (1, 3) and not lk and not tb(r)
+            report(name, ok, "exit 1 or 3, the token and its pieces absent from stdout and stderr, no traceback",
+                   f"exit {r.returncode}, leaked {lk}, traceback {tb(r)}")
+
+        # p29 (X01): a 64-hex token echoed as the correlation_id or inside the tx_hash of a landed answer: refused, not recorded, not printed
+        htok_v = "9f" * 32
+        htok = tmp / "anchor-hex.token"
+        htok.write_text(htok_v + "\n", encoding="utf-8")
+        for name, ref in (("p29_hex_token_as_correlation_id", {"correlation_id": htok_v}),
+                          ("p29b_hex_token_piece_as_correlation_id", {"correlation_id": htok_v[:32]}),
+                          ("p29c_hex_token_as_tx_hash", {"tx_hash": "0x" + htok_v})):
+            fk = ScriptFake(lambda n, m_, p, h, b, ref=ref: (200, js(dict(landed("k"), ref=dict(landed("k")["ref"], **ref))), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], htok, fk.url)
+            fk.close()
+            piece = htok_v[:32]
+            lk = piece in r.stdout + r.stderr or piece in anchors_of(out)
+            ok = r.returncode == 1 and not lk and not tb(r) and "claims-snapshot-anchor-" in r.stderr
+            report(name, ok, "exit 1, the key named, the token absent from stdout, stderr and anchors.json, no traceback",
+                   f"exit {r.returncode}, leaked {lk}, traceback {tb(r)}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p30 (H05) and p31 (H04d): a URL with a query, a fragment, userinfo, no host, a bad port or a space: refused at read, exit 2, no request
+        fk = ScriptFake(lambda n, m_, p, h, b: (200, js(landed("k")), {}))
+        port = fk.url.rsplit(":", 1)[1]
+        for name, u in (("p30_url_with_query", fk.url + "/base?x=1"), ("p30b_url_with_fragment", fk.url + "/base#f"),
+                        ("p30c_url_with_userinfo", f"http://user:pw@127.0.0.1:{port}"), ("p31_url_no_host", "https:///no-host"),
+                        ("p31b_url_port_no_host", f"https://:{port}"), ("p31c_url_bad_port", "https://127.0.0.1:abc"),
+                        ("p31d_url_with_space", fk.url + "/a b")):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, u)
+            ok = r.returncode == 2 and not out.exists() and not tb(r)
+            report(name, ok, "exit 2, --out not created, no traceback", f"exit {r.returncode}, out {out.exists()}, traceback {tb(r)}, stderr: {r.stderr.strip()[-160:]}")
+        n_calls = len(fk.calls)
+        fk.close()
+        report("p31e_no_request_for_any_refused_url", n_calls == 0, "0 requests", f"{n_calls} requests")
+
+        # p32 (H06): a chain outside armarium's name rule (pkg/armarium/engine/engine.go:202): refused at read, exit 2, no request
+        fk = ScriptFake(lambda n, m_, p, h, b: (200, js(landed("k")), {}))
+        for name, ch in (("p32_chain_with_slash", "argus/dev"), ("p32b_chain_dotdot", "../../evil"), ("p32c_chain_percent", "%2e%2e"),
+                         ("p32d_chain_space", "a b"), ("p32e_chain_crlf", "a\r\nX: y"), ("p32f_chain_empty_leading_dash", "-x")):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, fk.url, chain=ch)
+            ok = r.returncode == 2 and not out.exists() and not tb(r)
+            report(name, ok, "exit 2, --out not created, no traceback", f"exit {r.returncode}, out {out.exists()}, traceback {tb(r)}")
+        n_calls = len(fk.calls)
+        fk.close()
+        report("p32g_no_request_for_any_refused_chain", n_calls == 0, "0 requests", f"{n_calls} requests")
+
+        # p33 (Q02): the input's anchors.json as a directory, a FIFO, or a symlink: refused before reading, exit 2, nothing written
+        outside = tmp / "p33-outside.json"
+        outside.write_text("[]\n", encoding="utf-8")
+        for name, mk in (("p33_anchors_a_directory", lambda p: p.mkdir()), ("p33b_anchors_a_fifo", lambda p: os_.mkfifo(p)),
+                         ("p33c_anchors_a_symlink", lambda p: p.symlink_to(outside)),
+                         ("p33d_anchors_a_dangling_symlink", lambda p: p.symlink_to(tmp / "p33-nowhere"))):
+            inp = tmp / f"input-{name}"
+            shutil.copytree(fpre, inp)
+            (inp / "anchors.json").unlink(missing_ok=True)
+            mk(inp / "anchors.json")
+            out = tmp / f"out-{name}"
+            try:
+                r = run(inp, out, [ans], timeout=30)
+                rc, t = r.returncode, tb(r)
+            except subprocess.TimeoutExpired:
+                rc, t = "timeout", False
+            ok = rc == 2 and not out.exists() and not t
+            report(name, ok, "exit 2 within 30 s, --out not created, no traceback", f"exit {rc}, out {out.exists()}, traceback {t}")
+
+        # p34 (R04): a block_time with non-ASCII digits or an impossible date is recorded as null; a valid one is kept
+        for name, bt, want in (("p34_block_time_fullwidth_digits", "２０２６-11-13T16:00:00Z", None),
+                               ("p34b_block_time_arabic_indic_digits", "٢٠٢٦-11-13T16:00:00Z", None),
+                               ("p34c_block_time_impossible_date", "2026-13-45T25:61:61Z", None),
+                               ("p34d_block_time_valid_kept", "2026-11-13T16:00:00Z", "2026-11-13T16:00:00Z")):
+            fk = ScriptFake(lambda n, m_, p, h, b, bt=bt: (200, js(dict(landed("k"), block_time=bt)), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, fk.url)
+            fk.close()
+            try:
+                got = json.loads(anchors_of(out))[0].get("time")
+            except (ValueError, IndexError, AttributeError):
+                got = "(no entry)"
+            ok = r.returncode == 0 and got == want and not tb(r)
+            report(name, ok, f"exit 0, time {want!r}", f"exit {r.returncode}, time {got!r}, traceback {tb(r)}")
+
+        # p35: a correlation_id outside armarium's shape (32 lowercase hex, anchor_routes.go:25 at dev/ndim): refused, exit 1, not recorded
+        for name, cid in (("p35_correlation_id_upper_case", "C" * 32), ("p35b_correlation_id_one_char", "c"), ("p35c_correlation_id_64_hex", "c" * 64)):
+            fk = ScriptFake(lambda n, m_, p, h, b, cid=cid: (200, js(dict(landed("k"), ref=dict(landed("k")["ref"], correlation_id=cid))), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, fk.url)
+            fk.close()
+            ok = r.returncode == 1 and cid not in anchors_of(out) and not tb(r)
+            report(name, ok, "exit 1, the correlation id not recorded, no traceback", f"exit {r.returncode}, traceback {tb(r)}")
+
+        # p36: armarium's 409 signer_unusable (PR #42) is final: exit 1 after one request, the word printed, no retry
+        fk = ScriptFake(lambda n, m_, p, h, b: (409, js({"error": "signer_unusable", "message": "ARMARIUM_X is not a usable key"}), {}))
+        out = tmp / "out-p36"
+        r = run(fpre, out, [ans], tok, fk.url, ["--anchor-retries", "3"])
+        fk.close()
+        ok = r.returncode == 1 and len(fk.calls) == 1 and "409 signer_unusable" in r.stderr and "ARMARIUM_X" not in r.stderr
+        report("p36_signer_unusable_is_final", ok, "exit 1, 1 request, stderr names 409 signer_unusable and not the message",
+               f"exit {r.returncode}, calls {len(fk.calls)}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p37: the real armarium token shape arm1.<id>.<secret>: a landed answer with ordinary fields is still recorded (no false refusal)
+        atok_v = "arm1." + "0123456789abcdef0123456789abcdef" + "." + "fedcba9876543210" * 4
+        atok = tmp / "anchor-arm.token"
+        atok.write_text(atok_v + "\n", encoding="utf-8")
+        fk = ScriptFake(lambda n, m_, p, h, b: (200, js(landed("k")), {}))
+        out = tmp / "out-p37"
+        r = run(fpre, out, [ans], atok, fk.url)
+        fk.close()
+        ok = r.returncode == 0 and '"correlation_id": "' + "c" * 32 in anchors_of(out) and atok_v not in r.stdout + r.stderr
+        report("p37_armarium_token_shape_lands", ok, "exit 0, the entry recorded, the token absent", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
     print(f"{sum(RESULTS)} of {len(RESULTS)} cases gave the expected result; MISMATCH {sum(1 for x in RESULTS if not x)}")
     return 0 if all(RESULTS) else 1
 

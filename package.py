@@ -32,6 +32,15 @@ The packager gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d/
   service sent is recorded or printed.
 - --anchor-retries is a whole number of at least 0, --anchor-wait a finite number of seconds of at least 0.
 
+The packager re-gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d-regate/RESULT.md) added these:
+- No value the service sent is printed or recorded when it holds the token or a piece of it (12 characters or more, or a value of
+  6 characters or more that lies inside the token), whatever its shape: a token of plain letters or of hex is caught too.
+- --anchor-url has a host, a valid port, a path of printable ASCII without spaces, and no query, fragment or userinfo; --anchor-chain
+  follows armarium's chain-name rule [A-Za-z0-9][A-Za-z0-9_-]{0,63} (pkg/armarium/engine/engine.go:202). Both are checked at read, exit 2.
+- The input's anchors.json, when present, is a regular file and not a symbolic link (a directory, a FIFO or a link is exit 2).
+- The correlation_id is armarium's shape, 32 lowercase hex (anchor_routes.go:25 at dev/ndim). A block_time is kept only when it is
+  ASCII YYYY-MM-DDTHH:MM:SSZ and a real UTC time; otherwise it is recorded as null.
+
 The anchor (armarium-service README "The /anchor surface", dev/ndim 4375ba30): POST <url>/anchor/<chain>/records with
 {"key", "format": "claims-snapshot/anchor/1", "payload": base64 of one compact JSON object of at most 2048 bytes}. The object names
 "over": "sha256:<hex of signatures.json>" (the signatures file fixes every signature at once), the manifest's hash and the folder's
@@ -42,6 +51,7 @@ Exit codes: 0 packaged and check.py found no FAIL; 1 a step refused (add_witness
 or --out exists; 3 packaged but not anchored yet (in_doubt or not_sent after the retries): run the same command again on a fresh --out,
 or repeat the named key."""
 import base64
+import datetime
 import hashlib
 import http.client
 import json
@@ -59,6 +69,48 @@ import urllib.parse
 
 HERE = pathlib.Path(__file__).resolve().parent
 ANCHOR_FORMAT = "claims-snapshot/anchor/1"
+CHAIN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")  # armarium pkg/armarium/engine/engine.go:202
+CORR_RE = re.compile(r"[0-9a-f]{32}")  # armarium cmd/armarium-service/anchor_routes.go:25
+TX_RE = re.compile(r"0x[0-9a-fA-F]{64}")
+TIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+
+
+def echoes(v, token):
+    """True when the string v holds the token, or a piece of it of 12 characters or more, or itself lies inside the token (6 or more)."""
+    if not token or not isinstance(v, str):
+        return False
+    if token in v or (len(v) >= 6 and v in token):
+        return True
+    n = min(12, len(token))
+    return any(token[i:i + n] in v for i in range(len(token) - n + 1))
+
+
+def real_time(v):
+    if not (isinstance(v, str) and TIME_RE.fullmatch(v)):
+        return False
+    try:
+        datetime.datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
+
+
+def url_problem(url):
+    """None when --anchor-url is usable, else why not (checked before anything is written)."""
+    if any(not (33 <= ord(c) <= 126) for c in url):
+        return "holds a space, a control or a non-ASCII character"
+    u = urllib.parse.urlsplit(url)
+    if u.query or u.fragment or "?" in url or "#" in url:
+        return "has a query or a fragment"
+    if "@" in u.netloc:
+        return "carries userinfo"
+    if not u.hostname:
+        return "has no host"
+    try:
+        u.port
+    except ValueError:
+        return "has a port that is not a number in range"
+    return None
 
 
 def sha256(p):
@@ -111,7 +163,7 @@ def post(url, token, body, tls=None):
         try:
             conn.request("POST", u.path or "/", body=json.dumps(body).encode(),
                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-        except ValueError:
+        except (ValueError, http.client.InvalidURL):
             return "unsendable", {}
         except (OSError, http.client.HTTPException) as e:
             return None, {"why": f"no answer ({type(e).__name__})"}
@@ -129,9 +181,11 @@ def post(url, token, body, tls=None):
         conn.close()
 
 
-def word(v):
-    """A field of the service's answer, printed only when it is one plain word (the service's own text is never printed)."""
-    return v if isinstance(v, str) and re.fullmatch(r"[a-z][a-z_]{0,39}", v) else "(an answer not printed)"
+def word(v, token=None):
+    """A field of the service's answer, printed only when it is one plain word that does not echo the token (the service's own text
+    is never printed)."""
+    ok = isinstance(v, str) and re.fullmatch(r"[a-z][a-z_]{0,39}", v) and not echoes(v, token)
+    return v if ok else "(an answer not printed)"
 
 
 def anchor(out, url, chain, token, retries, wait, tls=None):
@@ -154,7 +208,7 @@ def anchor(out, url, chain, token, retries, wait, tls=None):
         status, ans = post(target, token, body, tls)
         last = (status, ans)
         if status == "unsendable":
-            print("not anchored: the request could not be formed from the token file; nothing was sent", file=sys.stderr)
+            print("not anchored: the request could not be formed from the token file and the URL; nothing was sent", file=sys.stderr)
             return 1, None
         if status == "tls":
             print(f"not anchored: TLS refused the service's certificate during the handshake ({ans.get('why')}); nothing was sent. Check --anchor-ca, and "
@@ -169,17 +223,18 @@ def anchor(out, url, chain, token, retries, wait, tls=None):
             ref = ans.get("ref")
             ref_ok = (isinstance(ref, dict) and ref.get("chain") == chain
                       and isinstance(ref.get("block"), int) and not isinstance(ref.get("block"), bool) and ref.get("block") >= 0
-                      and isinstance(ref.get("tx_hash"), str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", ref["tx_hash"])
-                      and isinstance(ref.get("correlation_id"), str) and re.fullmatch(r"[0-9a-fA-F]{1,64}", ref["correlation_id"]))
+                      and isinstance(ref.get("tx_hash"), str) and TX_RE.fullmatch(ref["tx_hash"])
+                      and isinstance(ref.get("correlation_id"), str) and CORR_RE.fullmatch(ref["correlation_id"])
+                      and not echoes(ref["tx_hash"], token) and not echoes(ref["correlation_id"], token))
             if not ref_ok:
                 print(f"not anchored: the service answered landed, but its ref is not the shape the anchor surface gives (chain {chain}, a block "
-                      f"number, a 0x transaction hash, a hex correlation id); nothing recorded. The service holds the result under key {key}: "
+                      f"number, a 0x transaction hash, a 32-hex correlation id, none of them echoing the token); nothing recorded. The service holds the result under key {key}: "
                       f"repeat the same request with that key", file=sys.stderr)
                 return 1, None
             # only the four fields of the anchor surface are kept: nothing else the service sent reaches the record
             ref = {k_: ref[k_] for k_ in ("chain", "correlation_id", "block", "tx_hash")}
             bt = ans.get("block_time")
-            bt = bt if isinstance(bt, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", bt) else None
+            bt = bt if real_time(bt) and not echoes(bt, token) else None
             return 0, {"over": f"sha256:{sig_h}", "method": "armarium", "ref": ref, "time": bt, "proof_file": None}
         if isinstance(status, int) and 300 <= status < 400:
             print(f"not anchored: the service answered {status}, a redirect; it is not followed and the token went nowhere else", file=sys.stderr)
@@ -188,10 +243,10 @@ def anchor(out, url, chain, token, retries, wait, tls=None):
             if attempt < retries:
                 time.sleep(wait)
             continue
-        print(f"not anchored: the service answered {status} {word(ans.get('error') or ans.get('state'))}", file=sys.stderr)
+        print(f"not anchored: the service answered {status} {word(ans.get('error') or ans.get('state'), token)}", file=sys.stderr)
         return 1, None
     status, ans = last
-    state = ans.get("why") if status is None else word(ans.get("state") or ans.get("error"))
+    state = ans.get("why") if status is None else word(ans.get("state") or ans.get("error"), token)
     print(f"not anchored yet: the service answered {status if status is not None else 'nothing'} {state} {retries + 1} time(s); repeat the same request with key {key} "
           f"(never a new key for it), or run this command again", file=sys.stderr)
     return 3, None
@@ -218,6 +273,9 @@ def main(argv):
         print("refused: --out lies inside the input folder; the input is never changed, nothing written", file=sys.stderr)
         return 2
     anc_in = src / "anchors.json"
+    if os.path.lexists(anc_in) and (anc_in.is_symlink() or not anc_in.is_file()):
+        print("refused: anchors.json in the input is not a regular file (a directory, a FIFO or a symbolic link), nothing written", file=sys.stderr)
+        return 2
     if anc_in.exists():
         try:
             prior = json.loads(anc_in.read_text(encoding="utf-8"))
@@ -247,6 +305,13 @@ def main(argv):
             return 2
         if any(not (33 <= ord(c) <= 126) for c in token):
             print("refused: the token file holds a space, a control or a non-ASCII character inside the value, nothing written", file=sys.stderr)
+            return 2
+        if not CHAIN_RE.fullmatch(chain):
+            print("refused: --anchor-chain is not an armarium chain name ([A-Za-z0-9][A-Za-z0-9_-]{0,63}), nothing written", file=sys.stderr)
+            return 2
+        why = url_problem(url)
+        if why:
+            print(f"refused: --anchor-url {why}, nothing written", file=sys.stderr)
             return 2
         scheme = urllib.parse.urlsplit(url).scheme
         if scheme not in ("https", "http"):
@@ -301,7 +366,7 @@ def main(argv):
             anchors.append(entry)
             blk, txh = entry['ref'].get('block'), entry['ref'].get('tx_hash')
             blk = blk if isinstance(blk, int) and not isinstance(blk, bool) else "(not a number)"
-            txh = txh if isinstance(txh, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", txh) else "(not a transaction hash)"
+            txh = txh if isinstance(txh, str) and TX_RE.fullmatch(txh) and not echoes(txh, token) else "(not a transaction hash)"
             print(f"anchored on {chain}: block {blk}, tx {txh}")
     else:
         print("not anchored: no --anchor-url given; anchors.json lists no anchor for this package")
