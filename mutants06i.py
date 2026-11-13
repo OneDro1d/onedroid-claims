@@ -75,6 +75,13 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        the message says "fix signatures.json before signing" (was "fix the file"); add_witness.py on a genuine parent with an answer whose
        signatures-entry.json has signer.name 5: exit 1, "refused, nothing written" with "the answer's signatures[0]: field signer.name is a
        JSON number", the parent unchanged by hash (the committed add_witness.py: the parent CHANGED, half-written, printed).
+  i4g  T03 and T05b of the fifteenth re-gate (13 Nov 2026 11:5xZ): sign.py on a manifest.json that is valid JSON but not an object (a list in
+       the sources role, a string in the auditor role, null in the manifest role), and on an object whose grading is a list, or whose
+       grading.witnesses holds a string (auditor role): exit 1, "manifest.json: … is a JSON <kind>, not an object" and "nothing written", no
+       Traceback, every file unchanged by hash (the committed sign.py: AttributeError AFTER writing signatures.json and the .sig, printed);
+       add_witness.py on a parent whose manifest.json is a list: exit 1, "manifest.json is a JSON array, not an object", unchanged; on an
+       answer whose manifest-entry.json name is ["x"]: exit 1, "refused, nothing written" with "the answer's manifest entry [0]: field name is
+       a JSON array, not a string", unchanged (the committed add_witness.py: TypeError, unhashable list, printed).
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -492,6 +499,85 @@ def i4f(tmp, fpre, FB, FS, committed_dir, committed_sign):
            f"exit {r.returncode}, refused: {'refused, nothing written' in r.stderr}, phrase: {phrase in r.stderr}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
 
 
+def i4g(tmp, fpre, FB, FS, committed_dir, committed_sign):
+    if FS is None:
+        f.not_built("i4g_tools_refuse_manifest_shapes", "sign.py and add_witness.py exit 1 by name, nothing written")
+        return
+    sources_args = ["--role", "sources", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+    auditor_args = ["--role", "auditor", "--file", "audit.jsonl", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+    manifest_args = ["--role", "manifest", "--key", str(m.KEYS["adder"]), "--identity", m.ADDER]
+
+    def sign_case(name, mutate, args, phrases):
+        def prep(d):
+            mp = d / "manifest.json"
+            mp.write_text(json.dumps(mutate(json.loads(mp.read_text(encoding="utf-8"))), indent=1) + "\n", encoding="utf-8")
+        d = f.copy_of(tmp, FS, name)
+        prep(d)
+        before = c.tree_hashes(d)
+        r = h.run_sign(d, args)
+        after = c.tree_hashes(d)
+        unchanged = before == after
+        changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+        ok = r.returncode == 1 and all(ph in r.stderr for ph in phrases) and "Traceback" not in r.stderr and unchanged
+        details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-2:]] + ([] if unchanged else ["changed: " + ", ".join(changed)])
+        if committed_sign is not None:
+            dc = f.copy_of(tmp, FS, name + "_committed")
+            prep(dc)
+            b2 = c.tree_hashes(dc)
+            rc = h.run_sign(dc, args, committed_sign)
+            a2 = c.tree_hashes(dc)
+            ch2 = sorted(k for k in set(b2) | set(a2) if b2.get(k) != a2.get(k))
+            details += [f"committed sign.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, changed: {ch2}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"sign.py exit 1, stderr with {phrases}, no Traceback, every file unchanged by hash",
+               f"exit {r.returncode}, phrases: {[ph in r.stderr for ph in phrases]}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+
+    def grading_list(M):
+        M["grading"] = []
+        return M
+
+    def witness_string(M):
+        M["grading"]["witnesses"] = ["a string"] + M["grading"]["witnesses"]
+        return M
+    nw = "nothing written"
+    sign_case("i4g_sign_sources_manifest_a_list", lambda M: [], sources_args, ["manifest.json: a JSON array is not an object", nw])
+    sign_case("i4g_sign_auditor_manifest_a_string", lambda M: "x", auditor_args, ["manifest.json: a JSON string is not an object", nw])
+    sign_case("i4g_sign_manifest_role_manifest_null", lambda M: None, manifest_args, ["manifest.json: a JSON null is not an object", nw])
+    sign_case("i4g_sign_auditor_grading_a_list", grading_list, auditor_args, ["manifest.json: grading is a JSON array, not an object", nw])
+    sign_case("i4g_sign_auditor_witness_a_string", witness_string, auditor_args, ["manifest.json: grading.witnesses[0] is a JSON string, not an object", nw])
+
+    ans = tmp / "i4g_answer"
+    c.make_answer(FB, ans)
+
+    def aw_case(name, prep_parent, answer, phrases):
+        parent = f.copy_of(tmp, fpre, name)
+        prep_parent(parent)
+        before = c.tree_hashes(parent)
+        r = f.run_add_witness_with(HERE / "add_witness.py", parent, answer)
+        unchanged = before == c.tree_hashes(parent)
+        ok = r.returncode == 1 and all(ph in r.stderr for ph in phrases) and "Traceback" not in r.stderr and unchanged
+        details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-2:]]
+        if committed_dir is not None:
+            pc = f.copy_of(tmp, fpre, name + "_committed")
+            prep_parent(pc)
+            b2 = c.tree_hashes(pc)
+            rc = f.run_add_witness_with(committed_dir / "add_witness.py", pc, answer)
+            details += [f"committed add_witness.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, tree changed: {b2 != c.tree_hashes(pc)}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"add_witness.py exit 1, stderr with {phrases}, no Traceback, the parent unchanged by hash",
+               f"exit {r.returncode}, phrases: {[ph in r.stderr for ph in phrases]}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+
+    def parent_manifest_list(d):
+        (d / "manifest.json").write_text("[]\n", encoding="utf-8")
+    aw_case("i4g_add_witness_parent_manifest_a_list", parent_manifest_list, ans, ["manifest.json is a JSON array, not an object"])
+    ans2 = tmp / "i4g_answer_name_list"
+    shutil.copytree(ans, ans2)
+    me_p = ans2 / "manifest-entry.json"
+    me = json.loads(me_p.read_text(encoding="utf-8"))
+    me["name"] = ["x"]
+    me_p.write_text(json.dumps(me, indent=1) + "\n", encoding="utf-8")
+    aw_case("i4g_add_witness_answer_entry_name_a_list", lambda d: None, ans2,
+            ["refused, nothing written", "the answer's manifest entry [0]: field name is a JSON array, not a string"])
+
+
 def i3(committed):
     if committed is None:
         print("skipped  i3: --committed none, no committed checker to compare with")
@@ -530,6 +616,7 @@ def main():
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "fixture-forger-i", "-f", str(forger)], check=True, capture_output=True)
         i2g(tmp, FS, forger, committed)
         i4f(tmp, fpre, FB, FS, committed_dir, committed_sign)
+        i4g(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
         print(f"{sum(c.RESULTS)} of {len(c.RESULTS)} cases gave the expected result; MISMATCH {mism}")
