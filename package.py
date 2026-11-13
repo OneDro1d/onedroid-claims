@@ -42,6 +42,13 @@ The packager re-gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-
   [A-Za-z0-9][A-Za-z0-9_-]{0,63} (pkg/armarium/engine/engine.go:202). Both are checked at read, exit 2.
 - The input holds only directories and regular files: a symbolic link, a FIFO or any other special file anywhere in it is refused
   before the copy (exit 2), so nothing from outside the folder can enter the package.
+
+Round 4 (gate/2026-11-13-packager-1d-round4/RESULT.md): every entry of the input must also be readable (a directory readable and
+searchable), and each dot-separated label of a host name is 1 to 63 letters, digits or dashes, not starting or ending with a dash;
+both are checked at read, exit 2. The limit of the echo rule, stated: the packager refuses a value that repeats the token or a run of
+8 or more of its characters in any case. It cannot detect a service that deliberately ENCODES the token it was given (in 7-character
+pieces across fields, as a number, through a letter mapping); a hostile anchor service is outside what this tool can defend, so use
+only an anchor service you trust with the token.
 - The correlation_id is armarium's shape, 32 lowercase hex (anchor_routes.go:25 at dev/ndim). A block_time is kept only when it is
   ASCII YYYY-MM-DDTHH:MM:SSZ and a real UTC time; otherwise it is recorded as null.
 
@@ -117,8 +124,11 @@ def url_problem(url):
         return "carries userinfo"
     if not host:
         return "has no host"
-    if not (re.fullmatch(r"[A-Za-z0-9.-]+", host) or ("[" in u.netloc and re.fullmatch(r"[0-9A-Fa-f:.]+", host))):
-        return "has a host that is neither a name of letters, digits, dots and dashes nor an IP literal"
+    ip6 = "[" in u.netloc and re.fullmatch(r"[0-9A-Fa-f:.]+", host)
+    label = r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)"
+    if not (ip6 or re.fullmatch(label + r"(\." + label + r")*", host)):
+        return ("has a host that is neither an IP literal nor a name of dot-separated labels (1 to 63 letters, digits or dashes, "
+                "no empty label, no dash at either end)")
     if u.netloc.endswith(":"):
         return "has an empty port"
     if port is not None and not 1 <= port <= 65535:
@@ -127,12 +137,17 @@ def url_problem(url):
 
 
 def special_entry(src):
-    """The first path under src that is not a directory or a regular file (a symbolic link, a FIFO, a socket, a device), else None."""
+    """(path, why) for the first entry under src that is not a readable directory or a readable regular file (a symbolic link, a
+    FIFO, a socket, a device, or a mode that hides it), else None."""
     for root, dirs, files in os.walk(src, followlinks=False):
         for name in dirs + files:
             q = pathlib.Path(root) / name
             if q.is_symlink() or not (q.is_dir() or q.is_file()):
-                return q
+                return q, "a symbolic link or a special file"
+            if q.is_dir() and not os.access(q, os.R_OK | os.X_OK):
+                return q, "a directory that cannot be read"
+            if q.is_file() and not os.access(q, os.R_OK):
+                return q, "a file that cannot be read"
     return None
 
 
@@ -181,6 +196,8 @@ def post(url, token, body, tls=None):
             conn.connect()
         except ssl.SSLError as e:
             return "tls", {"why": f"{type(e).__name__}: {getattr(e, 'verify_message', None) or e.reason or 'handshake failed'}"}
+        except UnicodeError:
+            return "unsendable", {}
         except OSError as e:
             return None, {"why": f"unreachable ({type(e).__name__})"}
         try:
@@ -297,8 +314,8 @@ def main(argv):
         return 2
     bad = special_entry(src)
     if bad is not None:
-        print(f"refused: the input holds {bad.relative_to(src)}, which is a symbolic link or a special file (only directories and regular "
-              "files are packaged), nothing written", file=sys.stderr)
+        print(f"refused: the input holds {bad[0].relative_to(src)}, which is {bad[1]} (only readable directories and regular files are "
+              "packaged), nothing written", file=sys.stderr)
         return 2
     anc_in = src / "anchors.json"
     if os.path.lexists(anc_in) and (anc_in.is_symlink() or not anc_in.is_file()):
