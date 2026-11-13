@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the adopted one (claims-snapshot 0.6 with the twelfth cut of 13 Nov 2026, V2b, V2c, V2d, V2f and V2g)
+      - name: the checker is the adopted one (claims-snapshot 0.6 with the twelfth cut of 13 Nov 2026, V2b, V2c, V2d, V2f, V2g and V2h)
         run: |
-          echo "8d093fd01058cc729720ccfe2910ad519fcacc0ce32385ed8168d1343ccb0853  check.py" > checker.sha256
+          echo "a0cef79a82ffeecacd0aaa9754e1e7afca3671851ba5418e61c8fc3b541e2d06  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.6 (imported from the checked-out tree, so no -I here)
         run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
@@ -33,7 +33,7 @@ jobs:
         run: python3 -I mutants06g.py --committed none
       - name: the one-auditor cut suite (one entry per role for auditor, sources and manifest, every signature file the prescribed name, the sources key is the key inside audit.jsonl.sig alone, grading.auditor.signer names that key, a model witness of service version 0.1.8 or later with carried and no bound fails K11; no older checker here)
         run: python3 -I mutants06h.py --committed none
-      - name: the twelfth cut suite (K11 reads every version record and any at 0.1.8 or later fails, a signatures.json that is not a list, an entry that is not an object or an object entry with a wrong-shaped field or signer field fails K13 by name with the object entries still verified, never a traceback; a pattern principal in allowed_signers fails and a key-list failure is never counted as verified; a manifest.json of another shape fails K1 by name before any other check, and a part no rule names is a K0 FAIL with a SUMMARY, never a traceback; sign.py and add_witness.py refuse such a file, an unreadable file, a manifest of another shape or a wrong-shaped answer before writing; no older checker here)
+      - name: the twelfth cut suite (K11 reads every version record and any at 0.1.8 or later fails, a signatures.json that is not a list, an entry that is not an object or an object entry with a wrong-shaped field or signer field fails K13 by name with the object entries still verified, never a traceback; a pattern principal in allowed_signers fails and a key-list failure is never counted as verified; a manifest.json of another shape fails K1 by name before any other check, and a part no rule names is a K0 FAIL with a SUMMARY, never a traceback, one report and one SUMMARY even when CHECK.json cannot be written; sign.py and add_witness.py refuse such a file, an unreadable file, a manifest of another shape or a wrong-shaped answer before writing; no older checker here)
         run: python3 -I mutants06i.py --committed none
       - name: the seventh re-gate's genuine aw10 snapshot (a fixture, 13 Nov 2026)
         run: python3 -I check.py fixtures/aw10-regate7-2026-11-13
