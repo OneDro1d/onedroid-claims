@@ -101,6 +101,13 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        line, ending FAIL, a K0 line naming "CHECK.json could not be written", exit 1, no Traceback (the committed checker: a PASS SUMMARY
        first, then a second). The honest --json run: one SUMMARY, CHECK.json written and holding the same result. The K0 text of the
        safety-net case (sources[0].n a list) names "<folder>", never the folder's absolute path.
+  i2k  the nineteenth re-gate's U, J05, J03 and J04 (13 Nov 2026 14:3xZ): a lone surrogate (JSON \\ud800) in an audit row's text, pages[0].file,
+       sources[0].path, format or subject.title, with and without --json: exactly one SUMMARY, exit 1 iff it ends FAIL, no Traceback, no
+       'stopped after the report' line, and with --json a valid CHECK.json agreeing (the committed checker: no SUMMARY, a Traceback, a 0-byte
+       CHECK.json). A stale CHECK.json saying PASS beside a K1 shape fault, an unreadable manifest, a missing field or a K0 net stop, run with
+       --json: REWRITTEN with result FAIL (the committed checker: left saying PASS). CHECK.json a symlink to a file outside the folder: refused
+       by a K0 line, the outside file unchanged (the committed checker: overwritten). CHECK.json a named pipe: refused within 20 s (the committed
+       checker: blocked). CHECK.json mode 444: still a K0 'could not be written' FAIL. An honest --json run leaves no temporary file.
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -801,6 +808,168 @@ def i2j(tmp, FB, committed):
            f"K0 {len(k0)}, path in stdout {leaked}, SUMMARY lines {len(summaries(r.stdout))}", k0)
 
 
+def i2k(tmp, FB, FS, committed):
+    """V2i (the nineteenth re-gate's U, J05, J03, J04, 13 Nov 2026 14:3xZ)."""
+    import os
+    import re as re_
+
+    def summaries(text):
+        return [l for l in text.splitlines() if l.startswith("SUMMARY")]
+
+    def run(d, extra=(), exe=None, timeout=30):
+        try:
+            return subprocess.run([sys.executable, "-I", str(exe or (HERE / "check.py")), str(d), *extra], capture_output=True, text=True,
+                                  errors="surrogateescape", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None
+
+    def check_json(d):
+        p_ = d / "CHECK.json"
+        if p_.is_symlink() or not p_.is_file():
+            return None
+        try:
+            return json.loads(p_.read_text(encoding="utf-8"))
+        except Exception:
+            return "NOT JSON"
+
+    def committed_note(d, extra):
+        if committed is None:
+            return []
+        rc = run(d, extra, committed)
+        if rc is None:
+            return ["committed checker: TIMEOUT (no output)"]
+        return [f"committed checker (exit {rc.returncode}): SUMMARY lines {len(summaries(rc.stdout))}, Traceback {'Traceback' in rc.stderr}, "
+                f"last stderr line {(rc.stderr.strip().splitlines() or [''])[-1][:140]!r}, CHECK.json {str(check_json(d))[:60]}"]
+
+    def one_summary_ok(r, d, extra):
+        sm = summaries(r.stdout)
+        consistent = len(sm) == 1 and (r.returncode == 1) == sm[0].endswith("FAIL")
+        ok = consistent and "Traceback" not in r.stderr and "stopped after the report was printed" not in r.stderr
+        cj = None
+        if extra:
+            cj = check_json(d)
+            ok = ok and isinstance(cj, dict) and (cj.get("result") == "FAIL") == sm[0].endswith("FAIL") and "CHECK.json written" in r.stdout
+        return ok, sm, cj
+
+    # U: a lone surrogate (JSON \ud800) that reaches a report line
+    SUR = "\\" + "ud800"
+
+    def man_raw(sub):
+        def e(d):
+            raw = (d / "manifest.json").read_text(encoding="utf-8")
+            new = sub(raw)
+            assert new != raw, "the edit did not apply"
+            (d / "manifest.json").write_text(new, encoding="utf-8")
+        return e
+
+    def audit_text(d):
+        lines = (d / "audit.jsonl").read_text(encoding="utf-8").split("\n")
+        r0 = json.loads(lines[0])
+        lines[0] = json.dumps(dict(r0, text="PLACEHOLDER-SURR")).replace("PLACEHOLDER-SURR", SUR)
+        (d / "audit.jsonl").write_text("\n".join(lines), encoding="utf-8")
+        M = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        M["grading"]["auditor"]["sha256"] = check.sha256(d / "audit.jsonl")
+        (d / "manifest.json").write_text(json.dumps(M, indent=1) + "\n", encoding="utf-8")
+
+    u_cases = (
+        ("i2k_audit_text_surrogate", FS, audit_text),
+        ("i2k_page_file_surrogate", FB, man_raw(lambda raw: raw.replace('"file": "page.txt"', '"file": "page' + SUR + '.txt"', 1))),
+        ("i2k_source_path_surrogate", FB, man_raw(lambda raw: re_.sub(r'"path": "([^"\\]*)"', lambda m_: '"path": "' + m_.group(1) + SUR + '"', raw, count=1))),
+        ("i2k_format_surrogate", FB, man_raw(lambda raw: raw.replace('"claims-snapshot/0.6"', '"claims-snapshot/0.6' + SUR + '"', 1))),
+        ("i2k_title_surrogate", FB, man_raw(lambda raw: re_.sub(r'"title": "[^"]*"', '"title": "t' + "\\\\" + 'ud800"', raw, count=1))),
+    )
+    for name, base, edit in u_cases:
+        for extra in ((), ("--json",)):
+            d = f.copy_of(tmp, base, name + ("_json" if extra else ""))
+            edit(d)
+            r = run(d, extra)
+            ok, sm, cj = one_summary_ok(r, d, extra)
+            report(name + ("_json" if extra else ""), ok,
+                   "exactly one SUMMARY, exit 1 iff it ends FAIL, no Traceback, no 'stopped after the report' line" + ("; CHECK.json written, valid JSON, its result agreeing" if extra else ""),
+                   f"SUMMARY lines {len(sm)}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}, net line {'stopped after the report' in r.stderr}" + (f", CHECK.json {str(cj)[:40] if not isinstance(cj, dict) else cj.get('result')}" if extra else ""),
+                   [l for l in r.stdout.splitlines() if "ud800" in l][:3] + committed_note(d, extra))
+
+    # J05: every early exit with --json rewrites a stale CHECK.json that said PASS
+    def setm(fn):
+        def e(d):
+            M = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+            fn(M)
+            (d / "manifest.json").write_text(json.dumps(M, indent=1) + "\n", encoding="utf-8")
+        return e
+
+    def unreadable(d):
+        (d / "manifest.json").write_text("{not json", encoding="utf-8")
+
+    j_cases = (
+        ("i2k_stale_check_json_k1_shape", setm(lambda M: M.__setitem__("format", ["claims-snapshot/0.6"]))),
+        ("i2k_stale_check_json_k1_unreadable", unreadable),
+        ("i2k_stale_check_json_k1_fields", setm(lambda M: M.pop("counts"))),
+        ("i2k_stale_check_json_k0_net", setm(lambda M: M["sources"][0].__setitem__("n", ["x"]))),
+    )
+    for name, edit in j_cases:
+        d = f.copy_of(tmp, FB, name)
+        edit(d)
+        (d / "CHECK.json").write_text(json.dumps({"result": "PASS", "note": "stale"}), encoding="utf-8")
+        r = run(d, ("--json",))
+        ok, sm, cj = one_summary_ok(r, d, ("--json",))
+        ok = ok and sm[0].endswith("FAIL") and isinstance(cj, dict) and cj.get("result") == "FAIL" and cj.get("note") is None
+        report(name, ok, "one SUMMARY ending FAIL, exit 1, CHECK.json REWRITTEN with result FAIL (the stale PASS gone), 'CHECK.json written (FAIL)'",
+               f"SUMMARY {sm[-1] if sm else None}, exit {r.returncode}, CHECK.json {cj if not isinstance(cj, dict) else (cj.get('result'), cj.get('note'))}",
+               committed_note(d, ("--json",)) if committed is not None else [])
+
+    # J03: CHECK.json a symlink to a file outside the folder: refused, the outside file unchanged
+    d = f.copy_of(tmp, FB, "i2k_check_json_symlink_out")
+    outside = tmp / "i2k_outside_victim.txt"
+    outside.write_text("victim\n", encoding="utf-8")
+    (d / "CHECK.json").symlink_to(outside)
+    r = run(d, ("--json",))
+    sm = summaries(r.stdout)
+    k0 = [l for l in r.stdout.splitlines() if l.startswith("K0 FAIL") and "CHECK.json" in l]
+    ok = (outside.read_text(encoding="utf-8") == "victim\n" and len(sm) == 1 and sm[0].endswith("FAIL") and len(k0) == 1 and r.returncode == 1
+          and "Traceback" not in r.stderr and (d / "CHECK.json").is_symlink())
+    note = []
+    if committed is not None:
+        outside.write_text("victim\n", encoding="utf-8")
+        rc = run(d, ("--json",), committed)
+        note = [f"committed checker: the outside file {'UNCHANGED' if outside.read_text(encoding='utf-8') == 'victim' + chr(10) else 'OVERWRITTEN'}, exit {rc.returncode}"]
+    report("i2k_check_json_symlink_out", ok, "the outside file unchanged, one K0 FAIL line naming CHECK.json, one SUMMARY ending FAIL, exit 1, the link left as it was",
+           f"outside unchanged {outside.read_text(encoding='utf-8') == 'victim' + chr(10) if committed is None else '(see committed)'}, K0 {k0[:1]}, SUMMARY {sm[-1] if sm else None}, exit {r.returncode}", note)
+
+    # J04: CHECK.json a named pipe: no hang, refused
+    d = f.copy_of(tmp, FB, "i2k_check_json_fifo")
+    os.mkfifo(d / "CHECK.json")
+    r = run(d, ("--json",), timeout=20)
+    if r is None:
+        report("i2k_check_json_fifo", False, "returns within 20 s, one K0 FAIL naming CHECK.json, one SUMMARY ending FAIL, exit 1", "TIMEOUT: blocked on the open")
+    else:
+        sm = summaries(r.stdout)
+        k0 = [l for l in r.stdout.splitlines() if l.startswith("K0 FAIL") and "CHECK.json" in l]
+        ok = len(sm) == 1 and sm[0].endswith("FAIL") and len(k0) == 1 and r.returncode == 1 and "Traceback" not in r.stderr
+        report("i2k_check_json_fifo", ok, "returns within 20 s, one K0 FAIL naming CHECK.json, one SUMMARY ending FAIL, exit 1",
+               f"K0 {k0[:1]}, SUMMARY {sm[-1] if sm else None}, exit {r.returncode}")
+
+    # J01 control: CHECK.json mode 444 in a writable folder stays a FAIL (an atomic replace must not slip past a read-only file)
+    d = f.copy_of(tmp, FB, "i2k_check_json_readonly")
+    (d / "CHECK.json").write_text(json.dumps({"result": "PASS", "note": "stale"}), encoding="utf-8")
+    os.chmod(d / "CHECK.json", 0o444)
+    r = run(d, ("--json",))
+    sm = summaries(r.stdout)
+    k0 = [l for l in r.stdout.splitlines() if l.startswith("K0 FAIL") and "CHECK.json could not be written" in l]
+    ok = len(sm) == 1 and sm[0].endswith("FAIL") and len(k0) == 1 and r.returncode == 1 and json.loads((d / "CHECK.json").read_text(encoding="utf-8")).get("note") == "stale"
+    report("i2k_check_json_readonly", ok, "one K0 'CHECK.json could not be written' line, one SUMMARY ending FAIL, exit 1, the read-only file unchanged",
+           f"K0 {len(k0)}, SUMMARY {sm[-1] if sm else None}, exit {r.returncode}")
+    os.chmod(d / "CHECK.json", 0o644)
+
+    # no stray temporary file is left in an honest folder after --json
+    d = f.copy_of(tmp, FB, "i2k_json_honest_no_temp")
+    before = {p_.name for p_ in d.iterdir()}
+    r = run(d, ("--json",))
+    after = {p_.name for p_ in d.iterdir()}
+    ok = after - before == {"CHECK.json"} and check_json(d) not in (None, "NOT JSON")
+    report("i2k_json_honest_no_temp_left", ok, "after an honest --json run the folder gained CHECK.json and nothing else",
+           f"new names {sorted(after - before)}")
+
+
 def i4h(tmp, fpre, FS, committed_dir):
     if FS is None:
         f.not_built("i4h_presence_not_truthiness", "sign.py and add_witness.py refuse by name, nothing written")
@@ -898,6 +1067,7 @@ def main():
         i2h(tmp, FB, committed)
         i2i(tmp, FB, committed)
         i2j(tmp, FB, committed)
+        i2k(tmp, FB, FS, committed)
         i4h(tmp, fpre, FS, committed_dir)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
