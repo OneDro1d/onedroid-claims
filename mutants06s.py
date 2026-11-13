@@ -239,8 +239,10 @@ def run_committed_vs_working(tmp, fx, name, committed, k2_expected_equal, mutate
         ok = not diff
         want = "every status equal (K2 text may differ)"
     else:
-        ok = diff == ["K2"] and k2c == "PASS" and k2w == "FAIL" and "a structural file named by hash in files" in outs["working"][2].get("K2", "")
-        want = "every status equal except K2: committed PASS, working FAIL naming a structural file"
+        # since the K2 cut was committed (13 Nov 2026 01:4xZ) the committed checker FAILs these entries too, so the case asserts the working
+        # checker's refusal and that no OTHER status differs; the committed K2 status is printed, not asserted (it was PASS before the cut)
+        ok = diff in ([], ["K2"]) and k2w == "FAIL" and "a structural file named by hash in files" in outs["working"][2].get("K2", "")
+        want = "every status but K2 equal; working K2 FAIL naming a structural file (committed K2 printed, not asserted)"
     print(f"{'as expected' if ok else 'MISMATCH'}  {name}: expected {want}; observed differing {diff or 'none'}, "
           f"exit committed={outs['committed'][0]} working={outs['working'][0]}")
     print("    committed K2: " + outs["committed"][2].get("K2", "").splitlines()[0])

@@ -1,0 +1,167 @@
+{
+ "format": "claims-snapshot/0.6",
+ "subject": {
+  "kind": "test-run",
+  "title": "Test run of NEG-SEQ at 4be1c0d9e8f7 (synthetic)",
+  "url": null,
+  "publisher": "gate-example-runner",
+  "scenario": {
+   "id": "NEG-SEQ",
+   "sha256": "1ffad12034e9e6b58258276ecc0adbb766e972e4d19fa06758f44a75da1fba0d"
+  },
+  "environment": {
+   "name": "dev",
+   "sha256": "72e9d7a4e36f580775e5056b22d3cb75b6a4c847db40498c0dca4c4c82fc6af9"
+  },
+  "system_under_test": {
+   "repository": "github.com/example/ingest",
+   "commit": "4be1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3",
+   "image_digest": null
+  },
+  "runner": {
+   "id": "gate-example",
+   "machine_id": "m-00000000000000000000000000000003"
+  },
+  "started_at": "2026-11-13T02:00:00Z",
+  "finished_at": "2026-11-13T02:00:12Z"
+ },
+ "taken_at": "2026-11-13T02:00:12Z",
+ "evidence_locator": {
+  "held_by": "folder",
+  "where": null,
+  "expires_at": null,
+  "note": "every artefact is in this folder"
+ },
+ "sources": [
+  {
+   "n": 1,
+   "url": null,
+   "name": "neg-seq.yaml",
+   "role": "artefact",
+   "artefact_role": "scenario",
+   "sha256": "1ffad12034e9e6b58258276ecc0adbb766e972e4d19fa06758f44a75da1fba0d",
+   "file": "sources/artefacts/neg-seq.yaml",
+   "copy": "text"
+  },
+  {
+   "n": 2,
+   "url": null,
+   "name": "sut.json",
+   "role": "artefact",
+   "artefact_role": "sut",
+   "sha256": "9d4d98c3fcbc621dd40dc431812fd37e25084a3bc4b17d5bed75f9647eee4997",
+   "file": "sources/artefacts/sut.json",
+   "copy": "text"
+  },
+  {
+   "n": 3,
+   "url": null,
+   "name": "dev.json",
+   "role": "artefact",
+   "artefact_role": "environment",
+   "sha256": "72e9d7a4e36f580775e5056b22d3cb75b6a4c847db40498c0dca4c4c82fc6af9",
+   "file": "sources/artefacts/dev.json",
+   "copy": "text"
+  },
+  {
+   "n": 4,
+   "url": null,
+   "name": "result.json",
+   "role": "artefact",
+   "artefact_role": "result",
+   "sha256": "93883c84eb3f7842021fc483efc7da724efe0f0ddf142230e20b27517169a00f",
+   "file": "sources/artefacts/result.json",
+   "copy": "text"
+  },
+  {
+   "n": 5,
+   "url": null,
+   "name": "corr-neg-seq.log",
+   "role": "artefact",
+   "artefact_role": "log",
+   "sha256": "82976445782d02345997808c809d2a69a5796fa3ac68e2fea796365e22638d74",
+   "file": "sources/artefacts/corr-neg-seq.log",
+   "copy": "text"
+  }
+ ],
+ "grading": {
+  "kind": "pre-witness",
+  "profile": "test-run",
+  "gates": [],
+  "rounds": [],
+  "sessions": [],
+  "witnesses": [
+   {
+    "name": "onedroid-witness-openai-gpt-4-1-nano-2025-04-14",
+    "kind": "model",
+    "model": "openai/gpt-4.1-nano-2025-04-14",
+    "method": "classify",
+    "signer": "onedroid-witness-openai-gpt-4-1-nano-2025-04-14 <SHA256:189UyxLz6hDz8i7rMTUV5CONWZJK3tIsNDeZOogeWCo>",
+    "file": "witness/onedroid-witness-openai-gpt-4-1-nano-2025-04-14.jsonl",
+    "sha256": "ede6752d6450eab3356dc0f6b3c1e4d2f73389601e3089f60ca9f43eaa85eb76",
+    "primary": false,
+    "score": {
+     "coverage_pct": 67,
+     "contradiction_pct": 33,
+     "band": "D"
+    },
+    "missing_claims": 0,
+    "undecided": 0
+   },
+   {
+    "name": "onedroid-witness-perplexity-pplx-decider-v1-2-20261016",
+    "kind": "model",
+    "model": "perplexity/pplx-decider-v1.2-20261016",
+    "method": "classify",
+    "signer": "onedroid-witness-perplexity-pplx-decider-v1-2-20261016 <SHA256:wrrM74oZVptp1PFzQEiLPzfLOzSEklARP/T2hVM8N+Q>",
+    "file": "witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl",
+    "sha256": "eae608f36b31f0ccc23e2f290025a53a5ee723cdd8b139f5c618dd95047712d7",
+    "primary": false,
+    "score": {
+     "coverage_pct": 67,
+     "contradiction_pct": 33,
+     "band": "D"
+    },
+    "missing_claims": 0,
+    "undecided": 0
+   }
+  ],
+  "auditor": {
+   "name": "the claims session's S1 third re-gate of onedroid-witness (synthetic, fictional)",
+   "model": "Claude Opus 5.5",
+   "file": "audit.jsonl",
+   "sha256": "86fb11605e4567f1d3c96d157c889b266d9bf6964c148e8cbcf5117d7a5e02ff",
+   "signer": "onedroid-claims-verification-gate <SHA256:uJjig+jCZZPoujSBMjiasWWFUV21GEVZVdvzDrdENgM>"
+  }
+ },
+ "pages": [
+  {
+   "file": "page.txt",
+   "sha256": "2ebb3add8c0f929c63cbee53197c46020ef0db489a239f74ecef792f7b4d69f9",
+   "lines": 3,
+   "note": "the claims' text, one per line (synthetic)"
+  }
+ ],
+ "counts": {
+  "claims": 3,
+  "checkable": 3
+ },
+ "files": [
+  {
+   "file": "service.json",
+   "sha256": "59aa092bc5b5824e21d42d9ff2b108139a79bbbd7d7db6ee54ab8177dfacf18f"
+  },
+  {
+   "file": "service.json.sig",
+   "sha256": "c579a90e1c0c2a7d2a32bc69cc970df5a1f3790a9129daf67eccb8b29841f294"
+  },
+  {
+   "file": "service-signature.json",
+   "sha256": "530aa13b389cff610a96455f7e729740cf21715a8c1598c80619b3376b3dc267"
+  },
+  {
+   "file": "split.jsonl",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ ]
+}

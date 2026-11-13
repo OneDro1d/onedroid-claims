@@ -1,0 +1,123 @@
+{
+ "service": "onedroid-witness",
+ "mode": "public",
+ "published": {
+  "mode": "public",
+  "published": {
+   "url": "https://raw.githubusercontent.com/OneDro1d/onedroid-witness/main/fixtures/snapshot-aw4-regate3-2026-11-13/audit.jsonl",
+   "sha256": "3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+   "manifest": {
+    "url": "https://raw.githubusercontent.com/OneDro1d/onedroid-witness/main/fixtures/snapshot-aw4-regate3-2026-11-13/manifest.json",
+    "sha256": "cc65569f85ec9d84cf5c1fd6178ed0be57dd9621f279d4262bc9cb652477ee30"
+   }
+  }
+ },
+ "request_sha256": "3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+ "manifest_sha256": "cc65569f85ec9d84cf5c1fd6178ed0be57dd9621f279d4262bc9cb652477ee30",
+ "carried": {
+  "sources/files/README.md": "8775938beed2b5f0b46ab0c40a5818f1d6518fab387b74ffbc361a39702e726a",
+  "sources/files/config.yaml": "d7ad023eeeea507e4662f070e0e16b5a2b69da9c654011694662a7e833be3cfb",
+  "sources/outputs/f9697ef0a2f8be3f6c539fc63b5915d93e9960dc7a7ac7172bb332bd47806338.txt": "f9697ef0a2f8be3f6c539fc63b5915d93e9960dc7a7ac7172bb332bd47806338"
+ },
+ "profile": "agent-work",
+ "claims": 7,
+ "models_asked": [
+  "openai/gpt-4.1-nano",
+  "perplexity/pplx-decider-v1.2"
+ ],
+ "models_run": [
+  "openai/gpt-4.1-nano",
+  "perplexity/pplx-decider-v1.2"
+ ],
+ "models_skipped": [],
+ "estimate_usd": {
+  "per_model": {
+   "openai/gpt-4.1-nano": 0.0004,
+   "perplexity/pplx-decider-v1.2": 2e-05
+  },
+  "total": 0.00042,
+  "rule": "input chars / 3.6 per claim + chat output max_tokens / 4"
+ },
+ "prompt_sha256": {
+  "agent-work": "ea715ab8b30b82e0556b8a7b406eaf4848d31a21a8fff47cf2649e1d415f598c"
+ },
+ "questions_sha256": {
+  "agent-work": "6e8ed1af7fc9971c2217bde22ef16f55ca2f4af1411c5017925d9ddefc649357"
+ },
+ "parse_rule": "the first JSON object in the text, a code fence stripped",
+ "candidate_rule_decision_models": "argmax of the yes-probabilities on the verdict's side",
+ "daily_cap_remaining_usd_at_start": 1.95388404,
+ "max_cost_usd": 0.5,
+ "per_model": {
+  "openai/gpt-4.1-nano": {
+   "kind": "chat",
+   "served": {
+    "openai/gpt-4.1-nano": 7
+   },
+   "model_versioned": "openai/gpt-4.1-nano-2025-04-14",
+   "providers": {
+    "Azure": 7
+   },
+   "provider_order": null,
+   "fallback_served": [],
+   "max_tokens": 400,
+   "temperature": 0,
+   "calls": 7,
+   "cost_usd": 0.00055,
+   "prompt_tokens": 4170,
+   "completion_tokens": 333,
+   "latency_s_median": 0.8,
+   "errors": {},
+   "undecided": 2,
+   "verdicts": {
+    "EVIDENCED": 1,
+    "CONTRADICTED": 2,
+    "NO EVIDENCE PUBLISHED": 2,
+    "UNDECIDED": 2
+   },
+   "agrees_with_primary": null,
+   "score": {
+    "coverage_pct": 20,
+    "contradiction_pct": 40,
+    "band": "E"
+   }
+  },
+  "perplexity/pplx-decider-v1.2": {
+   "kind": "decision",
+   "served": {
+    "perplexity/pplx-decider-v1.2-20261016": 7
+   },
+   "model_versioned": "perplexity/pplx-decider-v1.2-20261016",
+   "providers": {
+    "Perplexity": 7
+   },
+   "provider_order": null,
+   "fallback_served": [],
+   "max_tokens": null,
+   "temperature": null,
+   "calls": 7,
+   "cost_usd": 9e-05,
+   "prompt_tokens": 4463,
+   "completion_tokens": 19,
+   "latency_s_median": 0.3,
+   "errors": {},
+   "undecided": 2,
+   "verdicts": {
+    "EVIDENCED": 1,
+    "CONTRADICTED": 2,
+    "NO EVIDENCE PUBLISHED": 2,
+    "UNDECIDED": 2
+   },
+   "agrees_with_primary": null,
+   "score": {
+    "coverage_pct": 20,
+    "contradiction_pct": 40,
+    "band": "E"
+   }
+  }
+ },
+ "started_at": "2026-11-13T03:51:15Z",
+ "finished_at": "2026-11-13T03:51:18Z",
+ "total_cost_usd": 0.00064,
+ "split_claims": 0
+}
