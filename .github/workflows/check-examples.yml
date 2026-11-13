@@ -33,7 +33,7 @@ jobs:
         run: python3 -I mutants06g.py --committed none
       - name: the one-auditor cut suite (one entry per role for auditor, sources and manifest, every signature file the prescribed name, the sources key is the key inside audit.jsonl.sig alone, grading.auditor.signer names that key, a model witness of service version 0.1.8 or later with carried and no bound fails K11; no older checker here)
         run: python3 -I mutants06h.py --committed none
-      - name: the twelfth cut suite (K11 reads every version record and any at 0.1.8 or later fails, a signatures.json that is not a list, an entry that is not an object or an object entry with a wrong-shaped field or signer field fails K13 by name with the object entries still verified, never a traceback; a pattern principal in allowed_signers fails and a key-list failure is never counted as verified; sign.py and add_witness.py refuse such a file, an unreadable file or a wrong-shaped answer before writing; no older checker here)
+      - name: the twelfth cut suite (K11 reads every version record and any at 0.1.8 or later fails, a signatures.json that is not a list, an entry that is not an object or an object entry with a wrong-shaped field or signer field fails K13 by name with the object entries still verified, never a traceback; a pattern principal in allowed_signers fails and a key-list failure is never counted as verified; sign.py and add_witness.py refuse such a file, an unreadable file, a manifest of another shape or a wrong-shaped answer before writing; no older checker here)
         run: python3 -I mutants06i.py --committed none
       - name: the seventh re-gate's genuine aw10 snapshot (a fixture, 13 Nov 2026)
         run: python3 -I check.py fixtures/aw10-regate7-2026-11-13
