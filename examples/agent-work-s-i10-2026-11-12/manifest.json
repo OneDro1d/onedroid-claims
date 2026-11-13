@@ -107,13 +107,10 @@
   },
   "claims_sha256": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
   "files": {
-    "allowed_signers": "f210f0f117c4a7964c6f71584c7ad2967b8005bfd410b7cbe76ac25d241c6d59",
-    "anchors.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
     "audit.jsonl": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
     "audit.jsonl.sig": "31d516122b5a58bfbc6016cccdbb8357ce125ef1c0d5551eaf46e5dff0caf869",
     "claims.jsonl": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
     "page.txt": "392b82a2cf265646b4bca04f491bcf3824512af71e436b9a4e8ed935c43a531b",
-    "signatures.json": "17371f4abc7eab27e383bd2197737b6e2da6c9394680c3d651018db76312fbfc",
     "sources/files/bye.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
     "sources/files/hello.txt": "98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4",
     "witness/alice.jsonl": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
