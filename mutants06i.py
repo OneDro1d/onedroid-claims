@@ -91,6 +91,12 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
   i4h  sign.py, presence not truthiness (the gate's residual 2): grading.auditor "" and grading.witnesses {} refused in the auditor role,
        a witness entry whose file is 5 refused, nothing written, no Traceback; add_witness.py on a parent whose grading.auditor is a string
        (the gate's A04: the committed tool wrote, then stopped): exit 1, "refused", the parent unchanged by hash.
+  i2i  the seventeenth re-gate's finding B (13 Nov 2026 13:3xZ): check.py on FB with format a list; counts a list, a string; score a
+       string; taken_at a number; grading.profile a list, an object; grading.sessions a string; grading.sessions [5]; grading.gates [5];
+       sources[0].path a list; grading.witnesses[0].score a string: K1 FAIL with exactly the named shape line, a SUMMARY line, exit 1, no
+       Traceback. Controls: sources[0].path null, grading.sessions null, grading.gates null and a witness score null give no shape line.
+       The safety net: sources[0].n a list (no rule names it) gives "K0 FAIL: the checker stopped on a part of the folder it does not
+       read (TypeError at check.py:<line>…", a SUMMARY line, exit 1, no Traceback (the committed checker: Traceback, no SUMMARY).
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -676,6 +682,78 @@ def i2h(tmp, FB, committed):
                f"shape line {SHAPE_HEAD in r.stdout}, SUMMARY {summary_of(r)!r}, Traceback {'Traceback' in r.stderr}")
 
 
+K0_HEAD = "K0 FAIL: the checker stopped on a part of the folder it does not read ("
+
+
+def i2i(tmp, FB, committed):
+    def top(k, v):
+        def fn(M):
+            M[k] = v
+            return M
+        return fn
+
+    def gset(k, v):
+        def fn(M):
+            M["grading"][k] = v
+            return M
+        return fn
+
+    def src0(k, v):
+        def fn(M):
+            M["sources"][0][k] = v
+            return M
+        return fn
+
+    def wscore(v):
+        def fn(M):
+            M["grading"]["witnesses"][0]["score"] = v
+            return M
+        return fn
+
+    def run_case(name, fn):
+        d = f.copy_of(tmp, FB, name)
+        mp = d / "manifest.json"
+        mp.write_text(json.dumps(fn(json.loads(mp.read_text(encoding="utf-8"))), indent=1) + "\n", encoding="utf-8")
+        r, st, bl = h.run(d)
+        details = [f"stdout: {l}" for l in r.stdout.splitlines()[:3]] + [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-1:]]
+        if committed is not None:
+            rc, _, _ = c.run_check(committed, d)
+            details += [f"committed checker (exit {rc.returncode}): SUMMARY {summary_of(rc)!r}, Traceback: {'Traceback' in rc.stderr}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        return r, st, bl, details
+
+    cases = [
+        ("i2i_format_a_list", top("format", ["claims-snapshot/0.6"]), shape_line("format", "array", "a string")),
+        ("i2i_counts_a_list", top("counts", []), shape_line("counts", "array", "an object")),
+        ("i2i_counts_a_string", top("counts", "c"), shape_line("counts", "string", "an object")),
+        ("i2i_score_a_string", top("score", "s"), shape_line("score", "string", "an object")),
+        ("i2i_taken_at_a_number", top("taken_at", 5), shape_line("taken_at", "number", "a string")),
+        ("i2i_profile_a_list", gset("profile", ["agent-work"]), shape_line("grading.profile", "array", "a string")),
+        ("i2i_profile_an_object", gset("profile", {"p": 1}), shape_line("grading.profile", "object", "a string")),
+        ("i2i_sessions_a_string", gset("sessions", "s"), shape_line("grading.sessions", "string", "a list")),
+        ("i2i_sessions_holding_a_number", gset("sessions", [5]), shape_line("grading.sessions[0]", "number", "an object")),
+        ("i2i_gates_holding_a_number", gset("gates", [5]), shape_line("grading.gates[0]", "number", "an object")),
+        ("i2i_source_path_a_list", src0("path", ["p"]), shape_line("sources[0].path", "array", "a string or null")),
+        ("i2i_witness_score_a_string", wscore("s"), shape_line("grading.witnesses[0].score", "string", "an object")),
+    ]
+    for name, fn, want in cases:
+        r, st, bl, details = run_case(name, fn)
+        got = h.notes(bl, "K1")
+        ok = st.get("K1") == "FAIL" and got == [want] and summary_of(r) is not None and r.returncode == 1 and "Traceback" not in r.stderr
+        report(name, ok, f"K1 FAIL with exactly ['{want}'], a SUMMARY line, exit 1, no Traceback",
+               f"K1 {st.get('K1')}, lines {got}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+    for name, fn in (("i2i_control_source_path_null", src0("path", None)), ("i2i_control_sessions_null", gset("sessions", None)),
+                     ("i2i_control_gates_null", gset("gates", None)), ("i2i_control_witness_score_null", wscore(None))):
+        r, st, bl, details = run_case(name, fn)
+        ok = SHAPE_HEAD not in r.stdout and K0_HEAD not in r.stdout and summary_of(r) is not None and "Traceback" not in r.stderr
+        report(name, ok, f"no '{SHAPE_HEAD}' and no K0 line, a SUMMARY line, no Traceback",
+               f"shape {SHAPE_HEAD in r.stdout}, K0 {K0_HEAD in r.stdout}, SUMMARY {summary_of(r)!r}, Traceback {'Traceback' in r.stderr}", details)
+    r, st, bl, details = run_case("i2i_safety_net_source_n_a_list", src0("n", ["x"]))
+    k0 = [l for l in r.stdout.splitlines() if l.startswith(K0_HEAD)]
+    ok = len(k0) == 1 and "TypeError at check.py:" in k0[0] and summary_of(r) is not None and r.returncode == 1 and "Traceback" not in r.stderr
+    report("i2i_safety_net_source_n_a_list", ok, f"one '{K0_HEAD}TypeError at check.py:<line>…' line, a SUMMARY line, exit 1, no Traceback",
+           f"K0 lines {k0}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+
+
 def i4h(tmp, fpre, FS, committed_dir):
     if FS is None:
         f.not_built("i4h_presence_not_truthiness", "sign.py and add_witness.py refuse by name, nothing written")
@@ -771,6 +849,7 @@ def main():
         i4f(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i4g(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i2h(tmp, FB, committed)
+        i2i(tmp, FB, committed)
         i4h(tmp, fpre, FS, committed_dir)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
