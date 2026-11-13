@@ -42,7 +42,9 @@ def to_pre(d):
     (d / "CHECK.json").unlink(missing_ok=True)
     shutil.rmtree(d / "witness", ignore_errors=True)
     sigs = json.loads((d / "signatures.json").read_text(encoding="utf-8"))
-    (d / "signatures.json").write_text(json.dumps([e for e in sigs if e.get("role") == "auditor"], indent=1) + "\n", encoding="utf-8")
+    # the one-auditor cut (13 Nov 2026, NEXT-REVISION 32): the published auditor entry is dropped too, since sign.py now refuses to re-sign
+    # audit.jsonl under another name than the entry's; the throwaway auditor entry replaces it below
+    (d / "signatures.json").write_text(json.dumps([e for e in sigs if e.get("role") not in ("auditor", "witness", "manifest", "sources")], indent=1) + "\n", encoding="utf-8")
     M = m.mload(d)
     M["format"] = "claims-snapshot/0.6"
     g = M["grading"]
@@ -66,7 +68,8 @@ def to_pre(d):
     m.sign(d, "auditor", "auditor", AUDITOR, "audit.jsonl")
     M = m.mload(d)
     M["grading"]["auditor"]["sha256"] = m.sha(d / "audit.jsonl")
-    M["grading"]["auditor"]["signer"] = AUDITOR
+    # grading.auditor.signer stays as sign.py wrote it ("<principal> <SHA256:fp>"): K13 O4 (the one-auditor cut) compares it with the key
+    # inside audit.jsonl.sig
     if isinstance(M.get("files"), dict):
         # 13 Nov 2026 (NEXT-REVISION 22, the K2 cut): a writer names content only, never a structural file, and names the hashes of the
         # bytes it leaves behind, so the re-signed audit.jsonl.sig is refreshed here, as the real writer hashes after signing
