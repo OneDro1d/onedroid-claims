@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the adopted one (claims-snapshot 0.6 with the bound cut of 13 Nov 2026)
+      - name: the checker is the adopted one (claims-snapshot 0.6 with the sources cut of 13 Nov 2026)
         run: |
-          echo "af216591d73b1249453b35e35d35e8765286eec5ba50bb2b8c6fc22c02a9885c  check.py" > checker.sha256
+          echo "5ec50d48ae1c66eecd9622ed36ec23dfbe576fbf91c15efc27ad71057b724e2b  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.6 (imported from the checked-out tree, so no -I here)
         run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
@@ -27,15 +27,17 @@ jobs:
         run: python3 -I mutants06c.py --committed none
       - name: the bound cut suite (K11 reads a witness header's bound against the record's own manifest, a decision rests on a carried file, add_witness refuses a bound mismatch; no older checker and no witness-service tree here)
         run: python3 -I mutants06d.py --committed none
+      - name: the sources cut suite (a fifth signature role, sources: the auditor's key over the bound digest of the five bound sections, verified by K13 through every insertion; sign.py --role sources; no older checker here)
+        run: python3 -I mutants06f.py --committed none
       - name: the seventh re-gate's genuine aw10 snapshot (a fixture, 13 Nov 2026)
         run: python3 -I check.py fixtures/aw10-regate7-2026-11-13
       - name: the seventh re-gate's forged insertion must FAIL (the models read dev's file under prod's name; the carried-cut checker passed it)
         run: |
           if python3 -I check.py fixtures/aw10-regate7-forged-insertion-u2-2026-11-13; then echo "the forged insertion passed"; exit 1; fi
           python3 -I check.py fixtures/aw10-regate7-forged-insertion-u2-2026-11-13 | grep -c "a file the witness did not carry"
-      - name: the witness service's live output, agent-work (0.1.6, 13 Nov 2026, carried headers; one bound WARN since the bound cut)
+      - name: the witness service's live output, agent-work (0.1.6, 13 Nov 2026, carried headers; one bound WARN since the bound cut, one sources WARN since the sources cut)
         run: python3 -I check.py examples/witness-service-aw4-2026-11-13
-      - name: the witness service's live output, test-run (0.1.6, 13 Nov 2026, carried headers; one bound WARN since the bound cut)
+      - name: the witness service's live output, test-run (0.1.6, 13 Nov 2026, carried headers; one bound WARN since the bound cut, one sources WARN since the sources cut)
         run: python3 -I check.py examples/witness-service-tr4-2026-11-13
       - name: the key list parses (empty until the witness service mints keys)
         run: python3 -c "import json; [json.loads(l) for l in open('keys/model-keys.jsonl') if l.strip()]; print('key list ok')"
