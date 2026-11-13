@@ -18,6 +18,15 @@ against a fake armarium /anchor that speaks the answer shapes of armarium-servic
   p10 the CA without the server name: refused by TLS at once, no request served, exit 1, stderr points at --anchor-server-name.
   p11 another CA: refused by TLS at once, no request served, exit 1.
   p12 --anchor-ca naming a missing file: exit 2, --out not created.
+  p13 to p26, the packager gate's findings (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d/RESULT.md):
+      p13/p14 a service body echoing the Authorization header never puts the token on stderr (F1a); p15 a token file with an inner
+      newline is refused at read, exit 2, no traceback (F1b); p16 plain http is refused without --anchor-allow-http; p17 a redirect is
+      not followed and the second host gets nothing (F2); p18 --out inside the input is refused, the input unchanged (F3); p19 an
+      input whose anchors.json lists an entry is refused (F4, the owner's rule); p20-p22 a landed answer with a ref that is not an
+      object, a 200 that is not JSON or is a list: exit 1, named, no traceback; p23 a dangling symlink at --out, p24 a negative retry
+      count or a wait that is negative or nan: exit 2 (F5); p25 a break after the request arrived is in doubt, repeated with the
+      same key, exit 3, never "nothing was sent" (F6); p26 --anchor-ca with an http URL is refused; p27 (the owner's) a landed
+      ref echoing the token never puts it on stdout.
 usage: python3 -I test_package.py"""
 import base64
 import hashlib
@@ -93,12 +102,14 @@ def tree(d):
     return {str(q.relative_to(d)): sha256(q) for q in sorted(pathlib.Path(d).rglob("*")) if q.is_file()}
 
 
-def run(parent, out, answers, tokfile=None, url=None, extra=()):
+def run(parent, out, answers, tokfile=None, url=None, extra=(), no_allow_http=False):
     cmd = [sys.executable, "-I", str(HERE / "package.py"), str(parent), "--out", str(out), "--key", str(m.KEYS["adder"]), "--identity", m.ADDER]
     for a in answers:
         cmd += ["--answer", str(a)]
     if url:
         cmd += ["--anchor-url", url, "--anchor-chain", CHAIN, "--anchor-token-file", str(tokfile), "--anchor-wait", "0"]
+        if url.startswith("http://") and not no_allow_http:
+            cmd += ["--anchor-allow-http"]  # the fakes speak plain http; a real run refuses it (p16)
     cmd += list(extra)
     return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -322,6 +333,191 @@ def main():
         r = run(fpre, out, [ans], tok, "https://127.0.0.1:9", ["--anchor-ca", str(pki / "missing.crt")])
         ok = r.returncode == 2 and not out.exists()
         report("p12_anchor_ca_missing", ok, "exit 2, --out not created", f"exit {r.returncode}, out exists {out.exists()}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p13 to p27: the packager gate's findings (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d/RESULT.md)
+        import math  # noqa: F401
+        import os as os_
+
+        class ScriptFake:
+            """Answers each request by `fn(n, method, path, headers, body) -> (status, bytes, headers)`; `calls` logs every request."""
+
+            def __init__(self, fn, tls_ctx=None):
+                self.calls = []
+                me = self
+
+                class H(BaseHTTPRequestHandler):
+                    def _any(self):
+                        n = int(self.headers.get("Content-Length") or 0)
+                        body = self.rfile.read(n) if n else b""
+                        me.calls.append({"method": self.command, "path": self.path, "auth": self.headers.get("Authorization")})
+                        status, data, hdrs = fn(len(me.calls), self.command, self.path, self.headers, body)
+                        if status is None:
+                            self.close_connection = True
+                            try:
+                                self.connection.shutdown(2)
+                            except OSError:
+                                pass
+                            return
+                        self.send_response(status)
+                        for k, v in (hdrs or {}).items():
+                            self.send_header(k, v)
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+
+                    do_POST = _any
+                    do_GET = _any
+
+                    def log_message(self, *a):
+                        pass
+
+                self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+                if tls_ctx is not None:
+                    self.httpd.socket = tls_ctx.wrap_socket(self.httpd.socket, server_side=True)
+                scheme = "https" if tls_ctx is not None else "http"
+                self.url = f"{scheme}://127.0.0.1:{self.httpd.server_address[1]}"
+                threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+            def close(self):
+                self.httpd.shutdown()
+
+        def js(o):
+            return json.dumps(o).encode()
+
+        def leaked(r):
+            return TOKEN in r.stdout or TOKEN in r.stderr
+
+        def tb(r):
+            return "Traceback" in r.stderr
+
+        # p13: a 401 whose body echoes the Authorization header (a proxy's debug page): the token never reaches stderr
+        fk = ScriptFake(lambda n, m, p, h, b: (401, js({"error": "unauthorized", "message": "bad header: " + str(h.get("Authorization"))}), {}))
+        out = tmp / "out-p13"
+        r = run(fpre, out, [ans], tok, fk.url)
+        fk.close()
+        ok = r.returncode == 1 and not leaked(r) and not tb(r) and "401" in r.stderr
+        report("p13_echoed_token_in_4xx_not_printed", ok, "exit 1, the status named, the token absent from stdout and stderr, no traceback",
+               f"exit {r.returncode}, leaked {leaked(r)}, traceback {tb(r)}, stderr: {r.stderr.strip()[-200:].replace(TOKEN, '<TOKEN>')}")
+
+        # p14: 503 with a state echoing the token, retries exhausted: exit 3 with the key, the token absent
+        fk = ScriptFake(lambda n, m, p, h, b: (503, js({"state": "not_sent " + str(h.get("Authorization")), "error": str(h.get("Authorization"))}), {}))
+        out = tmp / "out-p14"
+        r = run(fpre, out, [ans], tok, fk.url, ["--anchor-retries", "1"])
+        fk.close()
+        ok = r.returncode == 3 and not leaked(r) and not tb(r) and "claims-snapshot-anchor-" in r.stderr
+        report("p14_echoed_token_in_retry_state_not_printed", ok, "exit 3, the key named, the token absent, no traceback",
+               f"exit {r.returncode}, leaked {leaked(r)}, traceback {tb(r)}, stderr: {r.stderr.strip()[-200:].replace(TOKEN, '<TOKEN>')}")
+
+        # p15: a token file holding a newline inside the value: refused at read, exit 2, nothing written, no traceback, the token absent
+        tok2 = tmp / "anchor-nl.token"
+        tok2.write_text(TOKEN[:8] + "\n" + TOKEN[8:] + "\n", encoding="utf-8")
+        out = tmp / "out-p15"
+        fk = ScriptFake(lambda n, m, p, h, b: (200, js(landed("k")), {}))
+        r = run(fpre, out, [ans], tok2, fk.url)
+        fk.close()
+        part_leak = TOKEN[:8] in r.stderr or TOKEN[8:] in r.stderr or TOKEN[8:] in r.stdout
+        ok = r.returncode == 2 and not out.exists() and not tb(r) and not part_leak and len(fk.calls) == 0
+        report("p15_token_with_inner_newline_refused", ok, "exit 2 before anything is written, no request, no traceback, no part of the token printed",
+               f"exit {r.returncode}, out {out.exists()}, calls {len(fk.calls)}, traceback {tb(r)}, part printed {part_leak}")
+
+        # p16: an http URL without --anchor-allow-http: refused, exit 2, no request
+        fk = ScriptFake(lambda n, m, p, h, b: (200, js(landed("k")), {}))
+        out = tmp / "out-p16"
+        r = run(fpre, out, [ans], tok, fk.url, no_allow_http=True)
+        fk.close()
+        ok = r.returncode == 2 and len(fk.calls) == 0 and not out.exists() and "http" in r.stderr
+        report("p16_plain_http_refused_by_default", ok, "exit 2, no request, --out not created, stderr names http",
+               f"exit {r.returncode}, calls {len(fk.calls)}, out {out.exists()}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p17: a 302 to a second host: not followed, the second host gets nothing, no anchor entry, exit 1
+        fk2 = ScriptFake(lambda n, m, p, h, b: (200, js(landed("k")), {}))
+        fk = ScriptFake(lambda n, m, p, h, b: (302, b"", {"Location": fk2.url + "/anchor/argus-dev-poa/records"}))
+        out = tmp / "out-p17"
+        r = run(fpre, out, [ans], tok, fk.url)
+        fk.close()
+        fk2.close()
+        anc = json.loads((out / "anchors.json").read_text()) if (out / "anchors.json").exists() else None
+        ok = r.returncode == 1 and len(fk2.calls) == 0 and anc in ([], None) and not leaked(r) and "redirect" in r.stderr
+        report("p17_redirect_not_followed", ok, "exit 1, the second host never called, no anchor entry, stderr says a redirect was not followed",
+               f"exit {r.returncode}, first calls {len(fk.calls)}, second calls {len(fk2.calls)}, anchors {anc}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p18: --out inside the input folder: refused, exit 2, the input unchanged
+        inp = tmp / "input-p18"
+        shutil.copytree(fpre, inp)
+        before = tree(inp)
+        r = run(inp, inp / "pkg", [ans])
+        ok = r.returncode == 2 and tree(inp) == before and not (inp / "pkg").exists()
+        report("p18_out_inside_input_refused", ok, "exit 2, the input unchanged by hash, no pkg/ inside it",
+               f"exit {r.returncode}, unchanged {tree(inp) == before}, pkg {(inp / 'pkg').exists()}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p19: an input whose anchors.json already lists an entry: refused, exit 2, nothing written (the owner's rule for F4)
+        inp = tmp / "input-p19"
+        shutil.copytree(fpre, inp)
+        (inp / "anchors.json").write_text(json.dumps([{"over": "sha256:" + "0" * 64, "method": "armarium", "ref": {}, "time": None, "proof_file": None}]) + "\n",
+                                          encoding="utf-8")
+        out = tmp / "out-p19"
+        r = run(inp, out, [ans])
+        ok = r.returncode == 2 and not out.exists() and "anchors.json" in r.stderr
+        report("p19_input_with_anchors_refused", ok, "exit 2, --out not created, stderr names anchors.json",
+               f"exit {r.returncode}, out {out.exists()}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p20 to p22: a landed answer whose ref is not an object, a 200 whose body is not JSON, a 200 whose body is a JSON list: exit 1, named, no traceback
+        for name, mk in (("p20_landed_ref_a_string", lambda: js(dict(landed("k"), ref="0xabc"))),
+                         ("p20b_landed_ref_null", lambda: js(dict(landed("k"), ref=None))),
+                         ("p21_200_body_not_json", lambda: b"<html>ok</html>"),
+                         ("p22_200_body_a_list", lambda: js([landed("k")]))):
+            fk = ScriptFake(lambda n, m, p, h, b, mk=mk: (200, mk(), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, fk.url)
+            fk.close()
+            anc = json.loads((out / "anchors.json").read_text()) if (out / "anchors.json").exists() else None
+            ok = r.returncode == 1 and not tb(r) and anc in ([], None) and "claims-snapshot-anchor-" in r.stderr
+            report(name, ok, "exit 1, no traceback, no anchor entry, stderr names the key to repeat",
+                   f"exit {r.returncode}, traceback {tb(r)}, anchors {anc}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p23: a dangling symlink at --out: refused, exit 2, nothing written through it
+        out = tmp / "out-p23"
+        target = tmp / "p23-target-never"
+        out.symlink_to(target)
+        r = run(fpre, out, [ans])
+        ok = r.returncode == 2 and not target.exists() and not tb(r)
+        report("p23_dangling_symlink_out_refused", ok, "exit 2, the target never created, no traceback",
+               f"exit {r.returncode}, target {target.exists()}, traceback {tb(r)}")
+
+        # p24: bad retry arguments: exit 2 before anything is written
+        for name, extra in (("p24_retries_negative", ["--anchor-retries", "-1"]), ("p24b_wait_nan", ["--anchor-wait", "nan"]),
+                            ("p24c_wait_negative", ["--anchor-wait", "-1"])):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], tok, "http://127.0.0.1:9", [x for x in extra])
+            ok = r.returncode == 2 and not out.exists() and not tb(r)
+            report(name, ok, "exit 2, --out not created, no traceback", f"exit {r.returncode}, out {out.exists()}, traceback {tb(r)}")
+
+        # p25: TLS completes, the request arrives, then the connection breaks: in doubt, repeated with the same key, exit 3, never "nothing was sent"
+        sctx = ssl_.SSLContext(ssl_.PROTOCOL_TLS_SERVER)
+        sctx.load_cert_chain(str(pki / "srv.crt"), str(pki / "srv.key"))
+        fk = ScriptFake(lambda n, m, p, h, b: (None, b"", {}), tls_ctx=sctx)
+        out = tmp / "out-p25"
+        r = run(fpre, out, [ans], tok, fk.url, ["--anchor-ca", str(pki / "test-ca.crt"), "--anchor-server-name", SNI, "--anchor-retries", "1"])
+        fk.close()
+        ok = r.returncode == 3 and len(fk.calls) == 2 and "nothing was sent" not in r.stderr and not tb(r)
+        report("p25_break_after_request_is_in_doubt", ok, "two requests (the same key repeated), exit 3, stderr never says nothing was sent",
+               f"exit {r.returncode}, calls {len(fk.calls)}, stderr: {r.stderr.strip()[-200:]}")
+
+        # p26: --anchor-ca with an http URL: refused (it would be ignored), exit 2
+        out = tmp / "out-p26"
+        r = run(fpre, out, [ans], tok, "http://127.0.0.1:9", ["--anchor-ca", str(pki / "test-ca.crt")])
+        ok = r.returncode == 2 and not out.exists()
+        report("p26_ca_with_http_refused", ok, "exit 2, --out not created", f"exit {r.returncode}, out {out.exists()}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p27 (the owner's, after the fix's own review): a landed ref whose tx_hash and block echo the token: the "anchored on" line never prints it
+        fk = ScriptFake(lambda n, m, p, h, b: (200, js(dict(landed("k"), ref={"chain": CHAIN, "block": str(h.get("Authorization")),
+                                                                                   "tx_hash": str(h.get("Authorization"))})), {}))
+        out = tmp / "out-p27"
+        r = run(fpre, out, [ans], tok, fk.url)
+        fk.close()
+        ok = not leaked(r) and not tb(r)
+        report("p27_echoed_token_in_landed_ref_not_printed", ok, "the token absent from stdout and stderr, no traceback",
+               f"exit {r.returncode}, leaked {leaked(r)}, traceback {tb(r)}")
     print(f"{sum(RESULTS)} of {len(RESULTS)} cases gave the expected result; MISMATCH {sum(1 for x in RESULTS if not x)}")
     return 0 if all(RESULTS) else 1
 
