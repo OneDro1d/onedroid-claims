@@ -48,6 +48,22 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        object): the entry is not checked", the other entries still verified (a damaged auditor entry also costs the sources entry its
        verified line: no auditor signature to match), a SUMMARY line, exit 1, no Traceback. The committed checker's SUMMARY and Traceback
        are printed (the RED).
+  i2f  V2c (the thirteenth re-gate's sealed R05, 13 Nov 2026 10:4xZ: a signer that IS an object whose `name` is a number, a list or an
+       object still crashed 2966678b at the key-list lookup (TypeError, unhashable) or at the ssh-keygen spawn (TypeError, not str), no
+       SUMMARY, the same on 5573fee2): FS with a witness entry's signer.name 5; the auditor entry's signer.name ["n"]; an extra entry whose
+       signer.name is {"k": 1}; a witness entry's signer.key_id a list; the auditor entry's signer.kind 7; a witness entry's signer.name null.
+       Each: K13 FAIL with the V2c line "signatures[<i>]: field signer.<f> is a JSON <kind>, not a string (a signer's name, key_id and kind
+       are strings): the entry is not checked", no V2b line, the other entries still verified (a damaged auditor entry costs two verified
+       lines), a SUMMARY line, exit 1, no Traceback. Plus: an extra signer key of odd type ("principal": ["x"]) gives no V2b or V2c line and
+       the same verified count and exit as the clean FS. The committed checker's SUMMARY and Traceback are printed (the RED).
+  i4   the tools refuse a wrong-shaped signatures.json by name before writing (the thirteenth re-gate's residual 2: sign.py:92 and
+       add_witness.py:95 read `(e.get("signer") or {}).get("name")`): i4a sign.py --role sources on FS with "junk" appended: exit 1, stderr
+       names signatures[<n>] "is not an object" and "nothing written", every file unchanged by hash; i4b sign.py --role auditor on FS with the
+       auditor's signer a string: exit 1, the V2b signer line, unchanged; i4c sign.py --role sources on FS with a witness signer.name 5: exit
+       1, the V2c line, unchanged; i4d add_witness.py on a copy of Fpre whose auditor entry's signer is a string: exit 1, "refused, nothing
+       written" with the V2b signer line, the parent unchanged; i4e add_witness.py on a copy of Fpre with "junk" appended: exit 1, "is not an
+       object", unchanged. The committed sign.py and add_witness.py are run on the same copies and their exit, Traceback and tree change are
+       printed (the RED: a traceback, or a tool that writes).
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -229,6 +245,151 @@ def i2e(tmp, FS, committed):
     case("i2e_witness_sha256_null", set_field(i_wit, "sha256", None), v2b_line(i_wit, "sha256", "null", "a string"), 1)
 
 
+V2C_TAIL = "(a signer's name, key_id and kind are strings): the entry is not checked"
+JUNK = "junk"
+
+
+def v2c_line(i, field, kind):
+    return f"signatures[{i}]: field signer.{field} is a JSON {kind}, not a string {V2C_TAIL}"
+
+
+def i2f(tmp, FS, committed):
+    if FS is None:
+        f.not_built("i2f_signer_inner_fields_with_wrong_shapes", "K13 FAIL by field signer.<f>, SUMMARY present, exit 1, no Traceback")
+        return
+    r0, st0, bl0 = h.run(FS)
+    n_ok0 = len(verified_lines(bl0))
+    sigs0 = f.load_sigs(FS)
+    i_aud = next(i for i, e in enumerate(sigs0) if e.get("role") == "auditor")
+    i_wit = next(i for i, e in enumerate(sigs0) if e.get("role") == "witness")
+
+    def case(name, mutate, want_line, lost):
+        d = f.copy_of(tmp, FS, name)
+        sigs = f.load_sigs(d)
+        mutate(sigs)
+        f.save_sigs(d, sigs)
+        r, st, bl = h.run(d)
+        ns = h.notes(bl)
+        got = [l for l in ns if V2C_TAIL in l]
+        v2b = [l for l in ns if V2B_TAIL in l]
+        ok = (got == [want_line] and not v2b and st.get("K13") == "FAIL" and len(verified_lines(bl)) == n_ok0 - lost and summary_of(r) is not None
+              and r.returncode == 1 and "Traceback" not in r.stderr)
+        details = c.block_lines(bl, "K13")
+        if committed is not None:
+            rc, _, _ = c.run_check(committed, d)
+            details += [f"committed checker (exit {rc.returncode}): SUMMARY {summary_of(rc)!r}, Traceback: {'Traceback' in rc.stderr}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"K13 FAIL with exactly '{want_line}', no V2b line, {n_ok0 - lost} verified lines, a SUMMARY line, exit 1, no Traceback",
+               f"K13 {st.get('K13')}, V2c lines {got}, V2b lines {len(v2b)}, verified {len(verified_lines(bl))}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+
+    def set_signer_field(i, k, v):
+        def m_(sigs):
+            sigs[i]["signer"][k] = v
+        return m_
+
+    def add_entry_with_signer(signer):
+        def m_(sigs):
+            e = json.loads(json.dumps(sigs[i_wit]))
+            e["signer"] = signer
+            sigs.append(e)
+        return m_
+    case("i2f_witness_signer_name_a_number", set_signer_field(i_wit, "name", 5), v2c_line(i_wit, "name", "number"), 1)
+    case("i2f_auditor_signer_name_a_list", set_signer_field(i_aud, "name", ["n"]), v2c_line(i_aud, "name", "array"), 2)
+    case("i2f_extra_entry_signer_name_an_object", add_entry_with_signer({"name": {"k": 1}, "key_id": "SHA256:x", "kind": "ssh-ed25519"}), v2c_line(len(sigs0), "name", "object"), 0)
+    case("i2f_witness_signer_key_id_a_list", set_signer_field(i_wit, "key_id", ["k"]), v2c_line(i_wit, "key_id", "array"), 1)
+    case("i2f_auditor_signer_kind_a_number", set_signer_field(i_aud, "kind", 7), v2c_line(i_aud, "kind", "number"), 2)
+    case("i2f_witness_signer_name_null", set_signer_field(i_wit, "name", None), v2c_line(i_wit, "name", "null"), 1)
+    # an extra signer key of odd type is not a shape fault: no line, the clean run's verified count and exit
+    d = f.copy_of(tmp, FS, "i2f_extra_signer_key_tolerated")
+    sigs = f.load_sigs(d)
+    sigs[i_wit]["signer"]["principal"] = ["x"]
+    f.save_sigs(d, sigs)
+    r, st, bl = h.run(d)
+    ns = h.notes(bl)
+    odd = [l for l in ns if V2C_TAIL in l or V2B_TAIL in l]
+    ok = not odd and len(verified_lines(bl)) == n_ok0 and r.returncode == r0.returncode and st.get("K13") == st0.get("K13") and "Traceback" not in r.stderr
+    report("i2f_extra_signer_key_tolerated", ok, f"no V2b or V2c line, {n_ok0} verified lines, K13 {st0.get('K13')}, exit {r0.returncode}, no Traceback",
+           f"odd lines {odd}, verified {len(verified_lines(bl))}, K13 {st.get('K13')}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", c.block_lines(bl, "K13"))
+
+
+def i4(tmp, fpre, FB, FS, committed_dir, committed_sign):
+    if FS is None:
+        f.not_built("i4_tools_refuse_wrong_shaped_signatures", "sign.py and add_witness.py exit 1 by name, nothing written")
+        return
+    sigs0 = f.load_sigs(FS)
+    i_aud = next(i for i, e in enumerate(sigs0) if e.get("role") == "auditor")
+    i_wit = next(i for i, e in enumerate(sigs0) if e.get("role") == "witness")
+    sources_args = ["--role", "sources", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+    auditor_args = ["--role", "auditor", "--file", "audit.jsonl", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+
+    def sign_case(name, mutate, args, phrase):
+        d = f.copy_of(tmp, FS, name)
+        sigs = f.load_sigs(d)
+        mutate(sigs)
+        f.save_sigs(d, sigs)
+        before = c.tree_hashes(d)
+        r = h.run_sign(d, args)
+        after = c.tree_hashes(d)
+        unchanged = before == after
+        changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+        ok = r.returncode == 1 and phrase in r.stderr and "nothing written" in r.stderr and "Traceback" not in r.stderr and unchanged
+        details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-3:]] + ([] if unchanged else ["changed: " + ", ".join(changed)])
+        if committed_sign is not None:
+            dc = f.copy_of(tmp, FS, name + "_committed")
+            sigs = f.load_sigs(dc)
+            mutate(sigs)
+            f.save_sigs(dc, sigs)
+            b2 = c.tree_hashes(dc)
+            rc = h.run_sign(dc, args, committed_sign)
+            a2 = c.tree_hashes(dc)
+            details += [f"committed sign.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, tree changed: {b2 != a2}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"sign.py exit 1, stderr with '{phrase}' and 'nothing written', no Traceback, every file unchanged by hash",
+               f"exit {r.returncode}, phrase: {phrase in r.stderr}, nothing written: {'nothing written' in r.stderr}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+
+    def append_junk(sigs):
+        sigs.append(JUNK)
+
+    def auditor_signer_string(sigs):
+        sigs[i_aud]["signer"] = "just-a-name"
+
+    def witness_name_number(sigs):
+        sigs[i_wit]["signer"]["name"] = 5
+    sign_case("i4a_sign_refuses_a_non_object_entry", append_junk, sources_args, f"signatures[{len(sigs0)}]: entry {JUNK!r} is not an object")
+    sign_case("i4b_sign_refuses_auditor_signer_a_string", auditor_signer_string, auditor_args, v2b_line(i_aud, "signer", "string", "an object"))
+    sign_case("i4c_sign_refuses_witness_signer_name_a_number", witness_name_number, sources_args, v2c_line(i_wit, "name", "number"))
+
+    ans = tmp / "i4_answer"
+    c.make_answer(FB, ans)
+    psigs = f.load_sigs(fpre)
+    p_aud = next(i for i, e in enumerate(psigs) if e.get("role") == "auditor")
+
+    def aw_case(name, mutate, phrase):
+        parent = f.copy_of(tmp, fpre, name)
+        sigs = f.load_sigs(parent)
+        mutate(sigs)
+        f.save_sigs(parent, sigs)
+        before = c.tree_hashes(parent)
+        r = f.run_add_witness_with(HERE / "add_witness.py", parent, ans)
+        unchanged = before == c.tree_hashes(parent)
+        ok = r.returncode == 1 and "refused, nothing written" in r.stderr and phrase in r.stderr and "Traceback" not in r.stderr and unchanged
+        details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-3:]]
+        if committed_dir is not None:
+            pc = f.copy_of(tmp, fpre, name + "_committed")
+            sigs = f.load_sigs(pc)
+            mutate(sigs)
+            f.save_sigs(pc, sigs)
+            b2 = c.tree_hashes(pc)
+            rc = f.run_add_witness_with(committed_dir / "add_witness.py", pc, ans)
+            a2 = c.tree_hashes(pc)
+            details += [f"committed add_witness.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, tree changed: {b2 != a2}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"add_witness.py exit 1, 'refused, nothing written' with '{phrase}', no Traceback, the parent unchanged by hash",
+               f"exit {r.returncode}, refused: {'refused, nothing written' in r.stderr}, phrase: {phrase in r.stderr}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+
+    def parent_auditor_signer_string(sigs):
+        sigs[p_aud]["signer"] = "just-a-name"
+    aw_case("i4d_add_witness_refuses_parent_auditor_signer_a_string", parent_auditor_signer_string, "the snapshot's " + v2b_line(p_aud, "signer", "string", "an object"))
+    aw_case("i4e_add_witness_refuses_parent_non_object_entry", append_junk, f"the snapshot's signatures[{len(psigs)}]: entry {JUNK!r} is not an object")
+
+
 def i3(committed):
     if committed is None:
         print("skipped  i3: --committed none, no committed checker to compare with")
@@ -259,6 +420,10 @@ def main():
         i1(tmp, F, committed)
         i2(tmp, FS, committed)
         i2e(tmp, FS, committed)
+        i2f(tmp, FS, committed)
+        committed_dir = None if c.SKIP_COMMITTED else f.committed_tools(tmp)
+        committed_sign = None if c.SKIP_COMMITTED else h.committed_sign_dir(tmp)
+        i4(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
         print(f"{sum(c.RESULTS)} of {len(c.RESULTS)} cases gave the expected result; MISMATCH {mism}")
