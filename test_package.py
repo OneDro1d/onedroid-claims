@@ -647,6 +647,88 @@ def main():
         fk.close()
         ok = r.returncode == 0 and '"correlation_id": "' + "c" * 32 in anchors_of(out) and atok_v not in r.stdout + r.stderr
         report("p37_armarium_token_shape_lands", ok, "exit 0, the entry recorded, the token absent", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p38 to p42: the packager's round 3 (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d-round3/RESULT.md)
+        def longest_run(a, b):
+            """The longest substring of b (case-insensitive) that also occurs in a."""
+            a, b = a.lower(), b.lower()
+            best = 0
+            for i in range(len(b)):
+                j = i + best + 1
+                while j <= len(b) and b[i:j] in a:
+                    best = j - i
+                    j += 1
+            return best
+
+        secret = atok_v.rsplit(".", 1)[1]
+        five11 = "0".join(secret[k * 11:(k + 1) * 11] for k in range(5))
+        five11 = (five11 + "0" * 64)[:64]
+        for name, ref in (("p38_secret_upper_cased_as_tx_hash", {"tx_hash": "0x" + secret.upper()}),
+                          ("p38b_secret_in_11_char_pieces_as_tx_hash", {"tx_hash": "0x" + five11}),
+                          ("p38c_secret_8_char_piece_in_correlation_id", {"correlation_id": secret[20:28] + "0" * 24}),
+                          ("p38d_secret_upper_piece_in_correlation_id", {"correlation_id": secret[:32].upper()})):
+            fk = ScriptFake(lambda n, m_, p, h, b, ref=ref: (200, js(dict(landed("k"), ref=dict(landed("k")["ref"], **ref))), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], atok, fk.url)
+            fk.close()
+            run_len = longest_run(r.stdout + r.stderr + anchors_of(out), secret)
+            ok = r.returncode == 1 and run_len < 8 and not tb(r)
+            report(name, ok, "exit 1, no run of 8 or more secret characters in stdout, stderr or anchors.json (any case), no traceback",
+                   f"exit {r.returncode}, longest run {run_len}, traceback {tb(r)}")
+
+        # p39: URL shapes round 3 found: an unclosed IPv6 bracket, port 0, port 65536, a "%" or "_" in the host: exit 2 before anything
+        for name, u in (("p39_url_unclosed_ipv6_bracket", "https://[::1:9443"), ("p39b_url_port_zero", "https://127.0.0.1:0"),
+                        ("p39c_url_port_too_big", "https://127.0.0.1:65536"), ("p39d_url_percent_in_host", "https://12%7.0.0.1:9443"),
+                        ("p39e_url_empty_port", "https://127.0.0.1:/")):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], atok, u)
+            ok = r.returncode == 2 and not out.exists() and not tb(r)
+            report(name, ok, "exit 2, --out not created, no traceback", f"exit {r.returncode}, out {out.exists()}, traceback {tb(r)}, stderr: {r.stderr.strip()[-160:]}")
+        # an IPv6 literal and a host name stay usable (refused only by the plain-http rule here, never by the URL rule)
+        for name, u in (("p39f_url_ipv6_literal_ok", "http://[::1]:9"), ("p39g_url_hostname_ok", "http://armarium-service.armarium-dev.svc:9")):
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], atok, u, no_allow_http=True)
+            ok = r.returncode == 2 and "plain http" in r.stderr and not tb(r)
+            report(name, ok, "the URL rule passes it (the plain-http refusal is what stops it)", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p40: a FIFO, a socket-like special file, or a symbolic link anywhere in the input: refused before the copy, exit 2, nothing written
+        for name, rel, mk in (("p40_fifo_inside_input", "sources/files/pipe", lambda p: os_.mkfifo(p)),
+                              ("p40b_symlink_to_outside_inside_input", "sources/files/leak.txt", lambda p: p.symlink_to(outside)),
+                              ("p40c_symlinked_dir_inside_input", "sources/linked", lambda p: p.symlink_to(tmp, target_is_directory=True))):
+            inp = tmp / f"input-{name}"
+            shutil.copytree(fpre, inp)
+            (inp / rel).parent.mkdir(parents=True, exist_ok=True)
+            mk(inp / rel)
+            out = tmp / f"out-{name}"
+            try:
+                r = run(inp, out, [ans], timeout=30)
+                rc, t = r.returncode, tb(r)
+            except subprocess.TimeoutExpired:
+                rc, t = "timeout", False
+            ok = rc == 2 and not out.exists() and not t
+            report(name, ok, "exit 2 within 30 s, --out not created, no traceback", f"exit {rc}, out {out.exists()}, traceback {t}")
+
+        # p41: with the real token shape, the service's plain words are still printed (no false refusal from the run rule)
+        for name, st, w in (("p41_401_unauthorized_printed", 401, "unauthorized"), ("p41b_403_forbidden_printed", 403, "forbidden"),
+                            ("p41c_409_signer_unusable_printed", 409, "signer_unusable")):
+            fk = ScriptFake(lambda n, m_, p, h, b, st=st, w=w: (st, js({"error": w}), {}))
+            out = tmp / f"out-{name}"
+            r = run(fpre, out, [ans], atok, fk.url)
+            fk.close()
+            ok = r.returncode == 1 and f"{st} {w}" in r.stderr
+            report(name, ok, f"exit 1, stderr names {st} {w}", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
+
+        # p42: a tx_hash that shares a run of 7 hex with the secret by chance is still recorded (the run rule is 8)
+        tx7 = (secret[:7] + "1" * 64)[:64]
+        if longest_run(atok_v, tx7) == 7:
+            fk = ScriptFake(lambda n, m_, p, h, b: (200, js(dict(landed("k"), ref=dict(landed("k")["ref"], tx_hash="0x" + tx7))), {}))
+            out = tmp / "out-p42"
+            r = run(fpre, out, [ans], atok, fk.url)
+            fk.close()
+            ok = r.returncode == 0 and tx7 in anchors_of(out)
+            report("p42_seven_char_chance_run_still_recorded", ok, "exit 0, the tx_hash recorded", f"exit {r.returncode}, stderr: {r.stderr.strip()[-160:]}")
+        else:
+            report("p42_seven_char_chance_run_still_recorded", False, "a 7-run fixture", f"the fixture's run is {longest_run(atok_v, tx7)}")
     print(f"{sum(RESULTS)} of {len(RESULTS)} cases gave the expected result; MISMATCH {sum(1 for x in RESULTS if not x)}")
     return 0 if all(RESULTS) else 1
 
