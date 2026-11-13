@@ -139,6 +139,10 @@ def build(root):
     M = mload(fx)
     M["format"] = "claims-snapshot/0.6"
     msave(fx, M)
+    # the one-auditor cut (13 Nov 2026, NEXT-REVISION 32): sign.py refuses to re-sign audit.jsonl under another name than the existing
+    # auditor entry's, so the published entry is dropped first; the throwaway auditor entry replaces it
+    sp = fx / "signatures.json"
+    sp.write_text(json.dumps([e for e in json.loads(sp.read_text(encoding="utf-8")) if e.get("role") != "auditor"], indent=1) + "\n", encoding="utf-8")
     sign(fx, "auditor", "auditor", AUDITOR, "audit.jsonl")
     sign(fx, "witness", "auditor", AUDITOR, primary_file(fx))
     add_model(fx, N1, P1, MODEL1, "model1", undecided_at=(3, 10, 20))

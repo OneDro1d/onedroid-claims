@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the adopted one (claims-snapshot 0.6 with the auditor-key cut of 13 Nov 2026)
+      - name: the checker is the adopted one (claims-snapshot 0.6 with the one-auditor cut of 13 Nov 2026)
         run: |
-          echo "7a20c25a526f97339bcc06f7b5f6ae33c0456486c5bb13313085d5b826e25969  check.py" > checker.sha256
+          echo "96c6dbb214b2171171ffdd6b0d9c5ede446d16501247b8df2420589c1033aa26  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.6 (imported from the checked-out tree, so no -I here)
         run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
@@ -31,6 +31,8 @@ jobs:
         run: python3 -I mutants06f.py --committed none
       - name: the auditor-key cut suite (one principal one key in allowed_signers, the sources signature's key is the key inside the audit signature, every signature's key is its principal's listed key, sign.py and add_witness.py refuse a second key under a name; no older checker here)
         run: python3 -I mutants06g.py --committed none
+      - name: the one-auditor cut suite (one entry per role for auditor, sources and manifest, every signature file the prescribed name, the sources key is the key inside audit.jsonl.sig alone, grading.auditor.signer names that key, a model witness of service version 0.1.8 or later with carried and no bound fails K11; no older checker here)
+        run: python3 -I mutants06h.py --committed none
       - name: the seventh re-gate's genuine aw10 snapshot (a fixture, 13 Nov 2026)
         run: python3 -I check.py fixtures/aw10-regate7-2026-11-13
       - name: the seventh re-gate's forged insertion must FAIL (the models read dev's file under prod's name; the carried-cut checker passed it)
