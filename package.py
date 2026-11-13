@@ -33,11 +33,15 @@ The packager gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d/
 - --anchor-retries is a whole number of at least 0, --anchor-wait a finite number of seconds of at least 0.
 
 The packager re-gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d-regate/RESULT.md) added these:
-- No value the service sent is printed or recorded when it holds the token or a piece of it (12 characters or more, or a value of
-  6 characters or more that lies inside the token), whatever its shape: a token of plain letters or of hex is caught too.
-- --anchor-url has a host, a valid port, a path of printable ASCII without spaces, and no query, fragment or userinfo; --anchor-chain
-  follows armarium's chain-name rule [A-Za-z0-9][A-Za-z0-9_-]{0,63} (pkg/armarium/engine/engine.go:202). Both are checked at read, exit 2.
-- The input's anchors.json, when present, is a regular file and not a symbolic link (a directory, a FIFO or a link is exit 2).
+- No value the service sent is printed or recorded when it shares a run of 8 or more characters with the token, compared without
+  regard to case (round 3: an upper-cased secret, and a secret cut in 11-character pieces, both got through the earlier rule). A
+  genuine 64-hex tx_hash shares such a run with a random armarium secret about once in a million anchors; that anchor is then
+  refused (exit 1, the key named) rather than recorded, which is the safe side.
+- --anchor-url has a host name of [A-Za-z0-9.-] or an IP literal, a port from 1 to 65535 when one is written, a path of printable
+  ASCII without spaces, and no query, fragment or userinfo; --anchor-chain follows armarium's chain-name rule
+  [A-Za-z0-9][A-Za-z0-9_-]{0,63} (pkg/armarium/engine/engine.go:202). Both are checked at read, exit 2.
+- The input holds only directories and regular files: a symbolic link, a FIFO or any other special file anywhere in it is refused
+  before the copy (exit 2), so nothing from outside the folder can enter the package.
 - The correlation_id is armarium's shape, 32 lowercase hex (anchor_routes.go:25 at dev/ndim). A block_time is kept only when it is
   ASCII YYYY-MM-DDTHH:MM:SSZ and a real UTC time; otherwise it is recorded as null.
 
@@ -75,14 +79,17 @@ TX_RE = re.compile(r"0x[0-9a-fA-F]{64}")
 TIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
 
+ECHO_RUN = 8
+
+
 def echoes(v, token):
-    """True when the string v holds the token, or a piece of it of 12 characters or more, or itself lies inside the token (6 or more)."""
+    """True when the string v shares a run of ECHO_RUN or more characters with the token (or the whole token, when it is shorter),
+    compared without regard to case."""
     if not token or not isinstance(v, str):
         return False
-    if token in v or (len(v) >= 6 and v in token):
-        return True
-    n = min(12, len(token))
-    return any(token[i:i + n] in v for i in range(len(token) - n + 1))
+    t, v = token.lower(), v.lower()
+    n = min(ECHO_RUN, len(t))
+    return any(t[i:i + n] in v for i in range(len(t) - n + 1))
 
 
 def real_time(v):
@@ -99,17 +106,33 @@ def url_problem(url):
     """None when --anchor-url is usable, else why not (checked before anything is written)."""
     if any(not (33 <= ord(c) <= 126) for c in url):
         return "holds a space, a control or a non-ASCII character"
-    u = urllib.parse.urlsplit(url)
+    try:
+        u = urllib.parse.urlsplit(url)
+        host, port = u.hostname, u.port
+    except ValueError:
+        return "is not a URL that can be read (an unclosed bracket or a port out of range)"
     if u.query or u.fragment or "?" in url or "#" in url:
         return "has a query or a fragment"
     if "@" in u.netloc:
         return "carries userinfo"
-    if not u.hostname:
+    if not host:
         return "has no host"
-    try:
-        u.port
-    except ValueError:
-        return "has a port that is not a number in range"
+    if not (re.fullmatch(r"[A-Za-z0-9.-]+", host) or ("[" in u.netloc and re.fullmatch(r"[0-9A-Fa-f:.]+", host))):
+        return "has a host that is neither a name of letters, digits, dots and dashes nor an IP literal"
+    if u.netloc.endswith(":"):
+        return "has an empty port"
+    if port is not None and not 1 <= port <= 65535:
+        return "has a port outside 1 to 65535"
+    return None
+
+
+def special_entry(src):
+    """The first path under src that is not a directory or a regular file (a symbolic link, a FIFO, a socket, a device), else None."""
+    for root, dirs, files in os.walk(src, followlinks=False):
+        for name in dirs + files:
+            q = pathlib.Path(root) / name
+            if q.is_symlink() or not (q.is_dir() or q.is_file()):
+                return q
     return None
 
 
@@ -271,6 +294,11 @@ def main(argv):
     src_r, out_r = src.resolve(), out.resolve()
     if out_r == src_r or src_r in out_r.parents:
         print("refused: --out lies inside the input folder; the input is never changed, nothing written", file=sys.stderr)
+        return 2
+    bad = special_entry(src)
+    if bad is not None:
+        print(f"refused: the input holds {bad.relative_to(src)}, which is a symbolic link or a special file (only directories and regular "
+              "files are packaged), nothing written", file=sys.stderr)
         return 2
     anc_in = src / "anchors.json"
     if os.path.lexists(anc_in) and (anc_in.is_symlink() or not anc_in.is_file()):
