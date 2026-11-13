@@ -118,3 +118,35 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    says so in K2's text. It changes K2's count on every 0.4 and later folder, so it goes with the next cut and its repin, not alone.
    Also from the same gate: Indie's env var `ONEDROID_CHECK_PY` is a PATH to the checker, not its hash (18 tests fail with "can't open
    file" when given the hash); the kit's docs should say so.
+21. **A store's version rule, made exact for the manifest signature** (the gate of the evidence service, Fleet f198d193, 13 Nov 2026
+   00:3xZ). Two facts met in that gate. (a) `sign.py --role manifest` REPLACES the manifest entry in `signatures.json` (sign.py line 65
+   drops the existing entry of the same file and role before appending the new one), because a manifest signature is over the
+   manifest's bytes and an old one can never verify against a changed manifest (Check in the store and K13 both refuse "a manifest
+   signature over another manifest.json"). (b) My version rule to Talos (message 70c2f07c, "the middle two append-only") said
+   `signatures.json` only grows, and the store enforces that literally (version.go `appendedJSON`: every parent entry still there, in
+   order, at the start). So the FIRST witness added to a folder whose manifest was never signed passes (the real pair in
+   TestCheckVersionRealPair), and the SECOND addition to any folder whose manifest is already signed cannot: the tool replaces, the
+   store wants the old entry kept. The rule, settled by the format's owner: `signatures.json` of a version keeps every parent entry
+   whose role is not `manifest`, in order, at the start, may append entries, and carries at most ONE `manifest` entry, which is the
+   version's own and replaces the parent's. And the counterpart the live gate showed missing: a version whose `manifest.json` differs
+   from its parent's MUST carry a `manifest` entry (and the `.sig` it names) over the version's manifest, verified against
+   `allowed_signers`, because section 14 says every allowed change re-signs the manifest. The store at f198d193 accepted a version whose
+   only change was an unsigned title edit (record evr_740d9cbedeba84eb on app-dev). The first publication of a folder still needs no
+   manifest signature (0.4 to 0.6 folders without one stay valid). The rule binds versions. Section 14's wording gains these two
+   sentences with the next cut, the store's `CheckVersion` gains the two checks now (Talos, from this gate's record), and `check.py` is
+   unchanged, since it never sees a parent.
+22. **A manifest never names the structural files by hash, and `add_witness.py` takes a pre-witness folder** (the gate of the evidence
+   service, 13 Nov 2026 00:3xZ to 00:5xZ). The kit's snapshot writer (Indie #71) lists `allowed_signers` and `signatures.json` in the
+   manifest's `files` object with their hashes. Both grow with every signature, and the manifest's own signature lands in
+   `signatures.json` AFTER the manifest is hashed and signed, so the hash the manifest names is stale the moment the folder is signed
+   or witnessed: the store's Check ("every hash the manifest names wherever it names it") refused the first witness added to the #438
+   golden folder with two stale hashes (worker case W6), and no version of any kit-written folder was possible. `check.py` never saw
+   it, because K2 skips an object-shaped `files` (item 20). The rule: `files` names content (pages, sources, witness files, the
+   service's files), never `manifest.json`, `signatures.json`, `allowed_signers`, `anchors.json` (it grows with every anchor),
+   `CHECK.json` or `CHECK.txt`. Done now: `add_witness.py` drops those entries from `files` (list or object, as the writer shaped it),
+   adds its extra files in the writer's shape, and no longer hashes `claims.jsonl` before and after on a folder that has none (it
+   crashed at line 136 on every pre-witness folder: FileNotFoundError, before any write). With that, the real tool added a synthetic
+   witness to a copy of the #438 golden folder (K2 4 files, 15 checks PASS) and the store kept it as a version
+   (evr_b5380b4e8753e3cc of evr_fc9c111102c9a3d6 on app-dev); the second witness added the same way is refused by the store at
+   f198d193 for the reason of item 21 (409, "signatures.json: entry 2 changed"), as predicted. Next cut: K2 reads both shapes (item
+   20) and FAILs a `files` entry that names a structural file; the kit's writer stops naming them (Talos, Indie); section 14 says so.
