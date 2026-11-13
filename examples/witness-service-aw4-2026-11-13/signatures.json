@@ -1,0 +1,58 @@
+[
+ {
+  "role": "auditor",
+  "file": "audit.jsonl",
+  "sha256": "3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+  "signer": {
+   "name": "onedroid-claims-verification-gate",
+   "key_id": "SHA256:uJjig+jCZZPoujSBMjiasWWFUV21GEVZVdvzDrdENgM",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T01:59:06Z",
+  "signature": "audit.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/onedroid-witness-openai-gpt-4-1-nano-2025-04-14.jsonl",
+  "sha256": "332211647fb304a107d111670f8b9034ef0b0770ea0eacbcd6881bc0e98e3890",
+  "line": "claims-snapshot/0.4 witness witness/onedroid-witness-openai-gpt-4-1-nano-2025-04-14.jsonl sha256:332211647fb304a107d111670f8b9034ef0b0770ea0eacbcd6881bc0e98e3890 over audit.jsonl sha256:3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+  "signer": {
+   "name": "onedroid-witness-openai-gpt-4-1-nano-2025-04-14",
+   "key_id": "SHA256:189UyxLz6hDz8i7rMTUV5CONWZJK3tIsNDeZOogeWCo",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T03:51:17Z",
+  "signature": "witness/onedroid-witness-openai-gpt-4-1-nano-2025-04-14.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl",
+  "sha256": "725c0d23f3af4797e32fca8449b4ae7140497fbb12dc8e77fd86469432cbf88f",
+  "line": "claims-snapshot/0.4 witness witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl sha256:725c0d23f3af4797e32fca8449b4ae7140497fbb12dc8e77fd86469432cbf88f over audit.jsonl sha256:3ba95930d60fd0df4f46da8d6b20ccff3ac428b85c63bb3c504aae5a330cae0a",
+  "signer": {
+   "name": "onedroid-witness-perplexity-pplx-decider-v1-2-20261016",
+   "key_id": "SHA256:wrrM74oZVptp1PFzQEiLPzfLOzSEklARP/T2hVM8N+Q",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T03:51:18Z",
+  "signature": "witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "manifest",
+  "file": "manifest.json",
+  "sha256": "00b10f9d908422761f53abe5c308d73d9af43bee3c839ae25b9facbbca1532f0",
+  "line": "claims-snapshot/0.4 manifest manifest.json sha256:00b10f9d908422761f53abe5c308d73d9af43bee3c839ae25b9facbbca1532f0",
+  "signer": {
+   "name": "live-client-test-adder",
+   "key_id": "SHA256:bVFNQeoB3uXuAXUSlUlvauy1XhDt5JJkYIhjQkPVXbU",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T03:51:19Z",
+  "signature": "manifest.json.sig",
+  "commit": null
+ }
+]

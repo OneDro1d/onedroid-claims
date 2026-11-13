@@ -195,7 +195,8 @@ def main():
         if B is not None:
             results.append(m.run(tmp, B, "B_candidate_quote_not_in_published_copy", quote_not_in_published_copy, {"K5": "FAIL", "K11": "PASS", "K13": "PASS"}, has={"K5": "missing from a copy published in this snapshot"}))
         # witnesses in the stage: listed without a primary passes and is recomputed; a primary mark ends the stage and fails the declaration
-        results.append(m.run(tmp, A, "A_model_witness_no_primary", add_model_witness, {"K1": "PASS", "K11": "PASS", "K12": "WARN", "K13": "PASS"}, has={"K12": "1 witness file(s) recomputed below", "K13": "verified"}))
+        # the carried cut (13 Nov 2026): a model witness over an evidence-shaped part (agent-work) without `carried` is a K11 WARN by name
+        results.append(m.run(tmp, A, "A_model_witness_no_primary", add_model_witness, {"K1": "PASS", "K11": "WARN", "K12": "WARN", "K13": "PASS"}, has={"K11": "records no `carried`", "K12": "1 witness file(s) recomputed below", "K13": "verified"}))
 
         def primary_marked(d):
             add_model_witness(d)

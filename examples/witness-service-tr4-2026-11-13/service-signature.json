@@ -1,0 +1,13 @@
+{
+ "role": "service",
+ "file": "service.json",
+ "sha256": "59aa092bc5b5824e21d42d9ff2b108139a79bbbd7d7db6ee54ab8177dfacf18f",
+ "line": "onedroid-witness/1 service.json sha256:59aa092bc5b5824e21d42d9ff2b108139a79bbbd7d7db6ee54ab8177dfacf18f",
+ "signature": "service.json.sig",
+ "signer": {
+  "name": "onedroid-witness-service",
+  "key_id": "SHA256:ALFP15H1xtx2n6Vxa02HoStMgbAnlWg5PeNYMU5d0Pc",
+  "kind": "ssh-ed25519"
+ },
+ "signed_at": "2026-11-13T03:51:23Z"
+}

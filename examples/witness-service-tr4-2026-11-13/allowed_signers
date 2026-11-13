@@ -1,0 +1,5 @@
+onedroid-claims-verification-gate namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFvv2KVtOywW6V2OaKDzuJ3oVOfy2YnNER8U8llDQCmK
+onedroid-witness-openai-gpt-4-1-nano-2025-04-14 namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDwFWuiEoYlIZfC/Hi4Y0yHBlAyC2fmbWO/Q/bLs6ybR
+onedroid-witness-perplexity-pplx-decider-v1-2-20261016 namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINz+prFfnGFlLUmJEanoNfvL8PxtZYUYvx58kgeQXT65
+onedroid-witness-service namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMulHZ0W//HidT6TTyREx7MNHDaEOjMEKoeiTk0Hf0q+
+live-client-test-adder namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOXEtOoO6dAYuoB3qJ7dga0d/CPCVHvrjmS2Q5WXP9P2
