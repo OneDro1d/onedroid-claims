@@ -1,0 +1,58 @@
+[
+ {
+  "role": "auditor",
+  "file": "audit.jsonl",
+  "sha256": "b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+  "signer": {
+   "name": "onedroid-claims-verification-gate",
+   "key_id": "SHA256:yLadmgNhToOMSWN+hteg2c6RkQZVH/OpFokwQVNKMB0",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T05:01:19Z",
+  "signature": "audit.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/onedroid-witness-openai-gpt-4-1-mini-2025-04-14.jsonl",
+  "sha256": "5891730d2a1c7e96c8bcf089c2d11701eaa2467015cc0df518db4cb65477276b",
+  "line": "claims-snapshot/0.4 witness witness/onedroid-witness-openai-gpt-4-1-mini-2025-04-14.jsonl sha256:5891730d2a1c7e96c8bcf089c2d11701eaa2467015cc0df518db4cb65477276b over audit.jsonl sha256:b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+  "signer": {
+   "name": "onedroid-witness-openai-gpt-4-1-mini-2025-04-14",
+   "key_id": "SHA256:hvFUKHZXH1tvc+X++T5IJ3vo8QPjietsxSeqwVFiTXU",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T05:05:24Z",
+  "signature": "witness/onedroid-witness-openai-gpt-4-1-mini-2025-04-14.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl",
+  "sha256": "0fc536b40e1b4594b43ef2f43a1210ddc23db0cc293fe020a12346a58b84868d",
+  "line": "claims-snapshot/0.4 witness witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl sha256:0fc536b40e1b4594b43ef2f43a1210ddc23db0cc293fe020a12346a58b84868d over audit.jsonl sha256:b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+  "signer": {
+   "name": "onedroid-witness-perplexity-pplx-decider-v1-2-20261016",
+   "key_id": "SHA256:wrrM74oZVptp1PFzQEiLPzfLOzSEklARP/T2hVM8N+Q",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T05:05:25Z",
+  "signature": "witness/onedroid-witness-perplexity-pplx-decider-v1-2-20261016.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "manifest",
+  "file": "manifest.json",
+  "sha256": "2424c5aefa934384660a99936ab2b7b26c98be3e2681772cb15feee0ccbbf328",
+  "line": "claims-snapshot/0.4 manifest manifest.json sha256:2424c5aefa934384660a99936ab2b7b26c98be3e2681772cb15feee0ccbbf328",
+  "signer": {
+   "name": "onedroid-claims-verification-gate",
+   "key_id": "SHA256:yLadmgNhToOMSWN+hteg2c6RkQZVH/OpFokwQVNKMB0",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-13T05:06:55Z",
+  "signature": "manifest.json.sig",
+  "commit": null
+ }
+]

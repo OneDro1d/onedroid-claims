@@ -1,0 +1,128 @@
+{
+ "service": "onedroid-witness",
+ "mode": "public",
+ "published": {
+  "mode": "public",
+  "published": {
+   "url": "https://gist.githubusercontent.com/token-boss/74bf89e2c1774b233833f8f983650eef/raw/67164908fd864bfa6a64161e186a250108ea4793/audit.jsonl",
+   "sha256": "b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+   "manifest": {
+    "url": "https://gist.githubusercontent.com/token-boss/74bf89e2c1774b233833f8f983650eef/raw/67164908fd864bfa6a64161e186a250108ea4793/manifest.json",
+    "sha256": "47d12b7bea18bea06d43fae9d1711b08b726b2040fc30ff9e0cfdbae207dff3f"
+   }
+  }
+ },
+ "request_sha256": "b30017f4332a6c42f60def167afc7033d3d60a74deb66771dc61997ccd140e2a",
+ "manifest_sha256": "47d12b7bea18bea06d43fae9d1711b08b726b2040fc30ff9e0cfdbae207dff3f",
+ "carried": {
+  "page.txt": "ab843215bded078453872d6b8702aafbcfbef0f840ecbddf749575aa57102bcd",
+  "sessions/ffffffff-9999-aaaa-bbbb-cccccccccccc.jsonl": "33093d1a598afac039184e5f51fb71f4c6deb723693ebe06aac6d9b272e8d3c6",
+  "sources/files/VERSION": "c0eacacd7e27bbf341d21e7e0e2997a363840a210d8e358d4babaebd765b5bfd",
+  "sources/files/dev/config.yaml": "aff71add770a62c4f520b36e5ea846cd39aa679142b6948b2956688f651188a6",
+  "sources/files/notes/q10.md": "8c6b6ada8377ba41a7d2b47aa618985e3a158a435b1a699adacb04ea71ba578a",
+  "sources/files/notes/q11.md": "62e0e82a7dfd3a9280334a65f004a6d1341db1a41656dc4466e01083e703bee2",
+  "sources/files/notes/q12.md": "3f23b231c4a645bae7cc25e0eef16ff99357c6ba9291380bde358977605f7da3",
+  "sources/files/server.conf": "ee8c73fee84d7f5bee178be5332f8a95585ffca173d06c97d44d454e1ed2813d"
+ },
+ "profile": "agent-work",
+ "claims": 9,
+ "models_asked": [
+  "openai/gpt-4.1-mini",
+  "perplexity/pplx-decider-v1.2"
+ ],
+ "models_run": [
+  "openai/gpt-4.1-mini",
+  "perplexity/pplx-decider-v1.2"
+ ],
+ "models_skipped": [],
+ "estimate_usd": {
+  "per_model": {
+   "openai/gpt-4.1-mini": 0.00201,
+   "perplexity/pplx-decider-v1.2": 2e-05
+  },
+  "total": 0.00203,
+  "rule": "input chars / 3.6 per claim + chat output max_tokens / 4"
+ },
+ "prompt_sha256": {
+  "agent-work": "ea715ab8b30b82e0556b8a7b406eaf4848d31a21a8fff47cf2649e1d415f598c"
+ },
+ "questions_sha256": {
+  "agent-work": "6e8ed1af7fc9971c2217bde22ef16f55ca2f4af1411c5017925d9ddefc649357"
+ },
+ "parse_rule": "the first JSON object in the text, a code fence stripped",
+ "candidate_rule_decision_models": "argmax of the yes-probabilities on the verdict's side",
+ "daily_cap_remaining_usd_at_start": 1.91953141,
+ "max_cost_usd": 0.05,
+ "per_model": {
+  "openai/gpt-4.1-mini": {
+   "kind": "chat",
+   "served": {
+    "openai/gpt-4.1-mini": 9
+   },
+   "model_versioned": "openai/gpt-4.1-mini-2025-04-14",
+   "providers": {
+    "OpenAI": 9
+   },
+   "provider_order": null,
+   "fallback_served": [],
+   "max_tokens": 400,
+   "temperature": 0,
+   "calls": 9,
+   "cost_usd": 0.0028,
+   "prompt_tokens": 5360,
+   "completion_tokens": 412,
+   "latency_s_median": 0.95,
+   "errors": {},
+   "undecided": 1,
+   "verdicts": {
+    "EVIDENCED": 3,
+    "CONTRADICTED": 3,
+    "NO EVIDENCE PUBLISHED": 2,
+    "UNDECIDED": 1
+   },
+   "agrees_with_primary": null,
+   "score": {
+    "coverage_pct": 38,
+    "contradiction_pct": 38,
+    "band": "D"
+   }
+  },
+  "perplexity/pplx-decider-v1.2": {
+   "kind": "decision",
+   "served": {
+    "perplexity/pplx-decider-v1.2-20261016": 9
+   },
+   "model_versioned": "perplexity/pplx-decider-v1.2-20261016",
+   "providers": {
+    "Perplexity": 9
+   },
+   "provider_order": null,
+   "fallback_served": [],
+   "max_tokens": null,
+   "temperature": null,
+   "calls": 9,
+   "cost_usd": 0.00012,
+   "prompt_tokens": 5866,
+   "completion_tokens": 27,
+   "latency_s_median": 0.29,
+   "errors": {},
+   "undecided": 1,
+   "verdicts": {
+    "EVIDENCED": 2,
+    "CONTRADICTED": 3,
+    "NO EVIDENCE PUBLISHED": 3,
+    "UNDECIDED": 1
+   },
+   "agrees_with_primary": null,
+   "score": {
+    "coverage_pct": 25,
+    "contradiction_pct": 38,
+    "band": "D"
+   }
+  }
+ },
+ "started_at": "2026-11-13T05:05:22Z",
+ "finished_at": "2026-11-13T05:05:25Z",
+ "total_cost_usd": 0.00292,
+ "split_claims": 1
+}
