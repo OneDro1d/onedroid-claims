@@ -1,6 +1,6 @@
 # claims-snapshot: open items for the revision after 0.5
 
-Kept here so the adopted `SPEC.md` (0.6 with erratum 1, 12 Nov 2026 13:3xZ: sha256 c01aa365…; 0.6 as cut was f90e43f7…, 0.5 was 58221ef5…) and `check.py` (0495931b…; 0.6 as cut was 2bdd8ba9…, 0.5 was be0db6f9…) stay byte-stable until a revision is cut. Each line names
+Kept here so the adopted `SPEC.md` (0.6 with the K2 cut of 13 Nov 2026: sha256 d454315b…; the pre-witness stage of 12 Nov was 6436ade2…, erratum 1 c01aa365…, 0.6 as cut f90e43f7…, 0.5 58221ef5…) and `check.py` (f2edc3f4…, the K2 cut of 13 Nov 2026; the pre-witness stage was 91f54598…, erratum 1 0495931b…, 0.6 as cut 2bdd8ba9…, 0.5 be0db6f9…) stay byte-stable until a revision is cut. Each line names
 where it came from. The format's owner is trilix-onedroid-business; a line leaves this file when a revision adopts or rejects it.
 
 1. **Signature bytes are never an identity** (gate of Indie #64, 12 Nov 2026, note V5). OpenSSH 10.2's `ssh-keygen -Y verify` accepts an
@@ -109,7 +109,12 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    (added by Talos on the first real pair: it appears with the first manifest signature and changes with every later allowed change),
    `signatures.json`, `allowed_signers` and `CHECK.json` may change between a parent and its version, `claims.jsonl` may appear once,
    everything else the parent lists is byte-identical, and a version of any other shape is refused.
-20. **K2 names the auditor part and a dict-shaped `files`** (the gate of Indie #71, 12 Nov 2026 23:5xZ, withheld case W7). One byte of
+20. ~~**K2 names the auditor part and a dict-shaped `files`**~~ **Adopted in the K2 cut of 13 Nov 2026 01:3xZ** (check.py f2edc3f4…, SPEC.md
+   d454315b…, `mutants06s.py` 17 cases, the owner's withheld cases 10 of 10 in `argus/fleet-gate-evidence/2026-11-13-claims-0.6-k2-cut/`):
+   K2 names pages, sources, `claims.jsonl`, the auditor part through `grading.auditor`, every witness file through its entry and `files`
+   in both shapes, each file once, two different hashes a FAIL by name; every JSON-lines reader in check.py splits on `\n` alone. The
+   nine published folders keep their exit codes and every line but K2's count. The `ONEDROID_CHECK_PY` note for the kit's docs stays
+   with Talos. The original line: (the gate of Indie #71, 12 Nov 2026 23:5xZ, withheld case W7). One byte of
    `audit.jsonl` changed after the write is caught by K11 (`grading.auditor.sha256`) and K13 (the signature), but K2 prints
    "PASS: 3 files named, hashes match": `check.py` K2 hashes `pages[].file`, `sources[].file`, `claims.jsonl` (not in pre-witness) and
    `files` only when it is a LIST (check.py 380 to 393), while the kit's writer (and the agent-work example) carry `files` as an OBJECT
@@ -119,7 +124,9 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    Also from the same gate: Indie's env var `ONEDROID_CHECK_PY` is a PATH to the checker, not its hash (18 tests fail with "can't open
    file" when given the hash); the kit's docs should say so.
 21. **A store's version rule, made exact for the manifest signature** (the gate of the evidence service, Fleet f198d193, 13 Nov 2026
-   00:3xZ). Two facts met in that gate. (a) `sign.py --role manifest` REPLACES the manifest entry in `signatures.json` (sign.py line 65
+   00:3xZ). *Section 14's two sentences adopted in the K2 cut of 13 Nov 2026 (SPEC.md d454315b…); the store's two `CheckVersion` checks
+   are Talos's (Fleet e119d218 carries them, gated PASSED 13 Nov 01:1xZ); the line stays until check.py learns to read a parent, which it
+   does not need to.* Two facts met in that gate. (a) `sign.py --role manifest` REPLACES the manifest entry in `signatures.json` (sign.py line 65
    drops the existing entry of the same file and role before appending the new one), because a manifest signature is over the
    manifest's bytes and an old one can never verify against a changed manifest (Check in the store and K13 both refuse "a manifest
    signature over another manifest.json"). (b) My version rule to Talos (message 70c2f07c, "the middle two append-only") said
@@ -135,8 +142,15 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    manifest signature (0.4 to 0.6 folders without one stay valid). The rule binds versions. Section 14's wording gains these two
    sentences with the next cut, the store's `CheckVersion` gains the two checks now (Talos, from this gate's record), and `check.py` is
    unchanged, since it never sees a parent.
-22. **A manifest never names the structural files by hash, and `add_witness.py` takes a pre-witness folder** (the gate of the evidence
-   service, 13 Nov 2026 00:3xZ to 00:5xZ). The kit's snapshot writer (Indie #71) lists `allowed_signers` and `signatures.json` in the
+22. ~~**A manifest never names the structural files by hash, and `add_witness.py` takes a pre-witness folder**~~ **Adopted in the K2 cut
+   of 13 Nov 2026 01:3xZ**: K2 FAILs a `files` entry (either shape) that names `manifest.json`, `signatures.json`, `allowed_signers`,
+   `anchors.json`, `CHECK.json` or `CHECK.txt`, the hash unchecked, and a `files` that is present but neither a list nor an object. The two
+   kit-written examples of this repository named the three structural files as first published; both manifests lost those three lines in
+   the cut (neither is signed or anchored: `signatures.json` holds the auditor and witness roles only, `anchors.json` is empty), and
+   `mutants06s.py` case s11K keeps the fact by re-adding them. `mutants06p.py`'s fixture builder drops them and refreshes the re-signed
+   `.sig` hash as every writer does. Still open on the kit's side (Talos, Indie): the snapshot writer stops naming them, and the Fleet
+   golden folders written before that (the #438 golden, format 0.6) fail K2 under this checker as the kit wrote them. The original line:
+   (the gate of the evidence service, 13 Nov 2026 00:3xZ to 00:5xZ). The kit's snapshot writer (Indie #71) lists `allowed_signers` and `signatures.json` in the
    manifest's `files` object with their hashes. Both grow with every signature, and the manifest's own signature lands in
    `signatures.json` AFTER the manifest is hashed and signed, so the hash the manifest names is stale the moment the folder is signed
    or witnessed: the store's Check ("every hash the manifest names wherever it names it") refused the first witness added to the #438
@@ -150,3 +164,19 @@ where it came from. The format's owner is trilix-onedroid-business; a line leave
    (evr_b5380b4e8753e3cc of evr_fc9c111102c9a3d6 on app-dev); the second witness added the same way is refused by the store at
    f198d193 for the reason of item 21 (409, "signatures.json: entry 2 changed"), as predicted. Next cut: K2 reads both shapes (item
    20) and FAILs a `files` entry that names a structural file; the kit's writer stops naming them (Talos, Indie); section 14 says so.
+23. **A candidate kind for the publisher-surfaces profile: restatement or artefact, from the auditor** (the second re-gate of the witness
+   service by the claims session, 13 Nov 2026 01:1xZ, item N1). With the publisher relation rendered on every source ("the publisher's
+   own surface" or "another site") and the prompt naming the rule, chat models still answered EVIDENCED on 3 of 6 restatements on the
+   publisher's own surface (gpt-4.1-nano both, gemini-2.5-flash-lite one; the decision model pplx-decider-v1.2 answered NO EVIDENCE
+   PUBLISHED on both), and a restatement on a subdomain (blog.example.org for a publisher at example.org) was marked "another site" and
+   EVIDENCED by all three. No row rule can tell a restatement from an artefact: a terms page is on the publisher's own surface AND is the
+   artefact for a liability cap. The decision taken by the format's owner: the witness service serves no model witnesses on
+   publisher-surfaces until this item is adopted and a gate passes on it (service 0.1.3: the profile is refused by name before any model
+   call, `/healthz` lists `profiles_served`); the human primary's publisher-surfaces audits are untouched. The item for the revision: each
+   candidate quote of a publisher-surfaces audit carries a `kind`, `restatement` or `artefact`, set by the auditor (the auditor knows which
+   page is the register, the changelog, the terms); the service applies the rule itself (a claim whose only FOR candidates are
+   restatements is NO EVIDENCE PUBLISHED before any model is asked, and a model's EVIDENCED on such a claim is recorded as a parse-level
+   note, never a verdict); the rendering shows the kind beside the relation. Subdomains need a rule either way: the registrable domain
+   (a public-suffix list the checker ships, or the manifest naming the publisher's sites in `subject.sites`), the second being the one
+   that needs no list. Two smaller notes from the same gate are already in the service: a trailing dot in `subject.url` names the same
+   site, and a UTF-8 BOM in `audit.jsonl` is refused by name.

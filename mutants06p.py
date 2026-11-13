@@ -67,6 +67,10 @@ def to_pre(d):
     M = m.mload(d)
     M["grading"]["auditor"]["sha256"] = m.sha(d / "audit.jsonl")
     M["grading"]["auditor"]["signer"] = AUDITOR
+    if isinstance(M.get("files"), dict):
+        # 13 Nov 2026 (NEXT-REVISION 22, the K2 cut): a writer names content only, never a structural file, and names the hashes of the
+        # bytes it leaves behind, so the re-signed audit.jsonl.sig is refreshed here, as the real writer hashes after signing
+        M["files"] = {k: m.sha(d / k) for k in M["files"] if k not in check.STRUCTURAL_FILES and (d / k).exists()}
     m.msave(d, M)
 
 

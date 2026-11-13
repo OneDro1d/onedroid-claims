@@ -28,6 +28,8 @@ WITNESS_KINDS = {"human", "agent", "model"}  # the witness header `kind` (0.6); 
 KEY_LIST = "keys/model-keys.jsonl"
 SIGN_NAMESPACE = "claims-snapshot"
 ANCHOR_METHODS = {"ots", "argus-commitment", "armarium"}
+# the structural files of a folder: never named by hash in the manifest's `files` (K2 refuses it, NEXT-REVISION 22, 13 Nov 2026)
+STRUCTURAL_FILES = ("manifest.json", "signatures.json", "allowed_signers", "anchors.json", "CHECK.json", "CHECK.txt")
 # the order of keys in a merged claims.jsonl row (SPEC.md 4b): the auditor's row with the witness's decision in the 0.3 places
 MERGE_ORDER = ["id", "text", "location", "kind", "checkable", "verdict", "confidence", "proofs", "counter", "located", "consulted",
                "searched", "note", "history", "graded_by", "graded_at", "witness", "evidence_missing", "carried_from", "on_request",
@@ -192,7 +194,10 @@ class Report:
 
 
 def load_jsonl(p):
-    return [json.loads(l) for l in pathlib.Path(p).read_text(encoding="utf-8").splitlines() if l.strip()]
+    """JSON lines, split on "\\n" ONLY (a trailing "\\r" is stripped, so a CRLF file still reads; empty and whitespace lines skipped).
+    Never str.splitlines(): it also cuts a line at U+2028, U+2029, U+0085, \\v, \\f and \\x1c to \\x1e, which are valid inside a JSON
+    string and which dump_jsonl (ensure_ascii=False) writes as is, so a claim text holding one was cut in two on read (13 Nov 2026)."""
+    return [json.loads(l.rstrip("\r")) for l in pathlib.Path(p).read_text(encoding="utf-8").split("\n") if l.strip()]
 
 
 def signed_line(role, file, h, over=None):
@@ -377,20 +382,52 @@ def main(argv):
         print(R.text())
         return 1
 
-    # K2 files and hashes
+    # K2 files and hashes: every content file the manifest names, wherever it names it, each once (13 Nov 2026, NEXT-REVISION 20 and 22):
+    # pages, sources, claims.jsonl (not pre-witness), the auditor part through grading.auditor.sha256 (0.4 and later), every witness
+    # file through its grading.witnesses entry, and `files` in both shapes, a list of {file, sha256} (the examples, add_witness.py) or
+    # an object file -> sha256 (the kit's writer). A file named twice with one hash counts once; two different hashes is a FAIL detail.
+    # A `files` entry naming a STRUCTURAL file is refused and its hash is not checked: signatures.json and allowed_signers grow with
+    # every signature, anchors.json with every anchor, and the manifest's own signature lands in signatures.json after the manifest
+    # is hashed, so such a hash is stale the moment the folder is signed or witnessed.
     bad = []
     files = [(pg["file"], pg["sha256"]) for pg in pages] + [(s["file"], s["sha256"]) for s in M["sources"] if s.get("file")]
     if not pre:
         files.append(("claims.jsonl", M["claims_sha256"]))
-    if isinstance(M.get("files"), list):  # 0.6: files listed beside the above (service.json, split.jsonl), each with its sha256
-        files += [(e_["file"], e_.get("sha256")) for e_ in M["files"] if isinstance(e_, dict) and e_.get("file")]
+    au_ = g.get("auditor") if isinstance(g.get("auditor"), dict) else {}
+    if au_.get("file") and au_.get("sha256"):
+        files.append((au_["file"], au_["sha256"]))
+    for w_ in (g.get("witnesses") or []) if isinstance(g.get("witnesses"), list) else []:
+        if isinstance(w_, dict) and w_.get("file") and w_.get("sha256"):
+            files.append((w_["file"], w_["sha256"]))
+    fl_ = M.get("files")
+    if isinstance(fl_, list):
+        listed = [(e_["file"], e_.get("sha256")) for e_ in fl_ if isinstance(e_, dict) and e_.get("file")]
+    elif isinstance(fl_, dict):
+        listed = [(f_, h_) for f_, h_ in fl_.items() if isinstance(f_, str) and f_]
+    else:
+        listed = []
+        if fl_ is not None:  # present but of a shape nobody writes: said by name, not skipped
+            bad.append("files: neither a list of {file, sha256} nor an object file -> sha256")
+    for f, h in listed:
+        if f in STRUCTURAL_FILES:
+            bad.append(f"{f}: a structural file named by hash in files (NEXT-REVISION 22: signatures.json and allowed_signers grow with every "
+                       "signature, anchors.json with every anchor, the manifest's own signature lands in signatures.json after the manifest is hashed)")
+        else:
+            files.append((f, h))
+    named = {}
     for f, h in files:
+        named.setdefault(f, [])
+        if h and h not in named[f]:
+            named[f].append(h)
+    for f, hs in named.items():
         p = snap / f
-        if not p.exists():
+        if len(hs) > 1:
+            bad.append(f"{f}: named with two different sha256")
+        elif not p.exists():
             bad.append(f"{f}: missing")
-        elif h and sha256(p) != h:
-            bad.append(f"{f}: sha256 {sha256(p)[:12]}… differs from manifest {h[:12]}…")
-    R.add("K2", "FAIL" if bad else "PASS", f"{len(files)} files named, hashes " + ("differ" if bad else "match"), bad)
+        elif hs and sha256(p) != hs[0]:
+            bad.append(f"{f}: sha256 {sha256(p)[:12]}… differs from manifest {hs[0][:12]}…")
+    R.add("K2", "FAIL" if bad else "PASS", f"{len(named)} files named, hashes " + ("differ" if bad else "match"), bad)
 
     claims = load_jsonl(snap / "audit.jsonl") if pre else load_jsonl(snap / "claims.jsonl")  # pre-witness: the auditor's rows stand in, no verdicts
     page_files = [pg["file"] for pg in pages]
@@ -498,9 +535,9 @@ def main(argv):
         f = s_.get("file")
         if f and (snap / f).exists() and sha256(snap / f) == s_.get("record_sha256"):
             seqs = set()
-            for l in (snap / f).read_text(encoding="utf-8", errors="replace").splitlines():
+            for l in (snap / f).read_text(encoding="utf-8", errors="replace").split("\n"):  # JSON lines: "\n" only, as load_jsonl
                 try:
-                    e = json.loads(l)
+                    e = json.loads(l.rstrip("\r"))
                 except Exception:
                     continue
                 if isinstance(e, dict) and isinstance(e.get("sequence"), int):
@@ -1038,9 +1075,9 @@ def main(argv):
             entries = []
             if lst_p is not None:
                 try:
-                    for ln in lst_p.read_text(encoding="utf-8").splitlines():
+                    for ln in lst_p.read_text(encoding="utf-8").split("\n"):  # JSON lines: "\n" only, as load_jsonl
                         if ln.strip():
-                            e_ = json.loads(ln)
+                            e_ = json.loads(ln.rstrip("\r"))
                             if not isinstance(e_, dict):
                                 raise ValueError("a line is not an object")
                             entries.append(e_)

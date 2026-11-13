@@ -147,13 +147,10 @@
   },
   "claims_sha256": "3a6945a6626cafca46d11c888ea3316be8a6cfd2e356991e6e0c08f5df1e2fdb",
   "files": {
-    "allowed_signers": "b4fca7a60d04a5c38c2c2ccd3be2170080277201da5a312037d12d74f38416a4",
-    "anchors.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
     "audit.jsonl": "83afd4ce35da7f6caa61651dae708bc420e2d522a278628848f9680584dbd19c",
     "audit.jsonl.sig": "17638ee5a36fb5e6c6aea473a565882cbc6d44f2ae22573da2ccd1384db93b05",
     "claims.jsonl": "3a6945a6626cafca46d11c888ea3316be8a6cfd2e356991e6e0c08f5df1e2fdb",
     "page.txt": "c4d7c4a621b891ce39db93cd7ce25add54e5736696286611d8b54d9e7844699f",
-    "signatures.json": "bb203e7b30cb4e0d924e618aaf57a959e8d35ec11e42479f74d13e0fb50e0ba5",
     "sources/artefacts/corr-example.log": "eef090cb4d7e7e49aff260cdc27e158400d15fd426b599bddda3b3e4b89a2f46",
     "sources/artefacts/example-shape.yaml": "a2842eaffc94f6556737f9490c3e885bbf73f58126eac5b8490747594721f360",
     "sources/artefacts/example.json": "7b44db9966e5139820e6810d2953789cd18580bb80f2b29d0ddac294568b4f4f",
