@@ -82,6 +82,15 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        add_witness.py on a parent whose manifest.json is a list: exit 1, "manifest.json is a JSON array, not an object", unchanged; on an
        answer whose manifest-entry.json name is ["x"]: exit 1, "refused, nothing written" with "the answer's manifest entry [0]: field name is
        a JSON array, not a string", unchanged (the committed add_witness.py: TypeError, unhashable list, printed).
+  i2h  the sixteenth re-gate's checker finding (13 Nov 2026 13:2xZ): check.py on FB with grading.auditor a string, a list, a number;
+       grading.auditor.file a number; grading.auditor.name a list; grading a list; grading null; the document a list; grading.witnesses an
+       object; a string witness entry at index 0; a witness entry whose file is a number; a pages entry that is a string; a pages entry whose
+       file is a number; a sources entry that is a string; sources an object: K1 FAIL whose detail lines are exactly the named
+       "manifest.json: <path> is a JSON <kind>, not <want>" lines, a SUMMARY line, exit 1, no Traceback (the committed checker: Traceback, no
+       SUMMARY, printed). Control: grading.auditor null and grading.witnesses null give no shape line.
+  i4h  sign.py, presence not truthiness (the gate's residual 2): grading.auditor "" and grading.witnesses {} refused in the auditor role,
+       a witness entry whose file is 5 refused, nothing written, no Traceback; add_witness.py on a parent whose grading.auditor is a string
+       (the gate's A04: the committed tool wrote, then stopped): exit 1, "refused", the parent unchanged by hash.
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -578,6 +587,150 @@ def i4g(tmp, fpre, FB, FS, committed_dir, committed_sign):
             ["refused, nothing written", "the answer's manifest entry [0]: field name is a JSON array, not a string"])
 
 
+SHAPE_HEAD = "manifest shape:"
+
+
+def shape_line(path, kind, want):
+    return f"manifest.json: {path} is a JSON {kind}, not {want}"
+
+
+def i2h(tmp, FB, committed):
+    def setg(k, v):
+        def fn(M):
+            M["grading"][k] = v
+            return M
+        return fn
+
+    def seta(k, v):
+        def fn(M):
+            M["grading"]["auditor"][k] = v
+            return M
+        return fn
+
+    def top(k, v):
+        def fn(M):
+            M[k] = v
+            return M
+        return fn
+
+    def witness0(fn_):
+        def fn(M):
+            fn_(M["grading"]["witnesses"])
+            return M
+        return fn
+
+    def pages0(v):
+        def fn(M):
+            M["pages"] = [v] + M["pages"]
+            return M
+        return fn
+
+    def page0_file(M):
+        M["pages"][0]["file"] = 5
+        return M
+
+    def source0(M):
+        M["sources"] = ["x"] + M["sources"]
+        return M
+
+    cases = [
+        ("i2h_auditor_a_string", setg("auditor", "a"), [shape_line("grading.auditor", "string", "an object")]),
+        ("i2h_auditor_a_list", setg("auditor", ["a"]), [shape_line("grading.auditor", "array", "an object")]),
+        ("i2h_auditor_a_number", setg("auditor", 7), [shape_line("grading.auditor", "number", "an object")]),
+        ("i2h_auditor_file_a_number", seta("file", 5), [shape_line("grading.auditor.file", "number", "a string")]),
+        ("i2h_auditor_name_a_list", seta("name", ["n"]), [shape_line("grading.auditor.name", "array", "a string")]),
+        ("i2h_grading_a_list", top("grading", []), [shape_line("grading", "array", "an object")]),
+        ("i2h_grading_null", top("grading", None), [shape_line("grading", "null", "an object")]),
+        ("i2h_document_a_list", lambda M: [], ["manifest.json: a JSON array is not an object"]),
+        ("i2h_witnesses_an_object", setg("witnesses", {"x": 1}), [shape_line("grading.witnesses", "object", "a list")]),
+        ("i2h_witness_entry_a_string", witness0(lambda W: W.insert(0, "x")), [shape_line("grading.witnesses[0]", "string", "an object")]),
+        ("i2h_witness_entry_file_a_number", witness0(lambda W: W[0].__setitem__("file", 5)), [shape_line("grading.witnesses[0].file", "number", "a string")]),
+        ("i2h_pages_entry_a_string", pages0("x"), [shape_line("pages[0]", "string", "an object")]),
+        ("i2h_pages_entry_file_a_number", page0_file, [shape_line("pages[0].file", "number", "a string")]),
+        ("i2h_sources_entry_a_string", source0, [shape_line("sources[0]", "string", "an object")]),
+        ("i2h_sources_an_object", top("sources", {"a": 1}), [shape_line("sources", "object", "a list")]),
+    ]
+    for name, fn, want in cases:
+        d = f.copy_of(tmp, FB, name)
+        mp = d / "manifest.json"
+        mp.write_text(json.dumps(fn(json.loads(mp.read_text(encoding="utf-8"))), indent=1) + "\n", encoding="utf-8")
+        r, st, bl = h.run(d)
+        got = h.notes(bl, "K1")
+        head = SHAPE_HEAD in bl.get("K1", "")
+        ok = st.get("K1") == "FAIL" and head and got == want and summary_of(r) is not None and r.returncode == 1 and "Traceback" not in r.stderr
+        details = [f"K1 block: {l}" for l in bl.get("K1", "").splitlines()[:4]] + [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-1:]]
+        if committed is not None:
+            rc, _, _ = c.run_check(committed, d)
+            details += [f"committed checker (exit {rc.returncode}): SUMMARY {summary_of(rc)!r}, Traceback: {'Traceback' in rc.stderr}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"K1 FAIL '{SHAPE_HEAD} …' with exactly {want}, a SUMMARY line, exit 1, no Traceback",
+               f"K1 {st.get('K1')}, head {head}, lines {got}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+    for name, k in (("i2h_control_auditor_null", "auditor"), ("i2h_control_witnesses_null", "witnesses")):
+        d = f.copy_of(tmp, FB, name)
+        mp = d / "manifest.json"
+        M = json.loads(mp.read_text(encoding="utf-8"))
+        M["grading"][k] = None
+        mp.write_text(json.dumps(M, indent=1) + "\n", encoding="utf-8")
+        r, st, bl = h.run(d)
+        ok = SHAPE_HEAD not in r.stdout and summary_of(r) is not None and "Traceback" not in r.stderr
+        report(name, ok, f"grading.{k} null is treated as absent: no '{SHAPE_HEAD}' line, a SUMMARY line, no Traceback",
+               f"shape line {SHAPE_HEAD in r.stdout}, SUMMARY {summary_of(r)!r}, Traceback {'Traceback' in r.stderr}")
+
+
+def i4h(tmp, fpre, FS, committed_dir):
+    if FS is None:
+        f.not_built("i4h_presence_not_truthiness", "sign.py and add_witness.py refuse by name, nothing written")
+        return
+    auditor_args = ["--role", "auditor", "--file", "audit.jsonl", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+    nw = "nothing written"
+
+    def sign_case(name, mutate, phrases):
+        d = f.copy_of(tmp, FS, name)
+        mp = d / "manifest.json"
+        mp.write_text(json.dumps(mutate(json.loads(mp.read_text(encoding="utf-8"))), indent=1) + "\n", encoding="utf-8")
+        before = c.tree_hashes(d)
+        r = h.run_sign(d, auditor_args)
+        unchanged = before == c.tree_hashes(d)
+        ok = r.returncode == 1 and all(ph in r.stderr for ph in phrases) and "Traceback" not in r.stderr and unchanged
+        report(name, ok, f"sign.py exit 1, stderr with {phrases}, no Traceback, every file unchanged by hash",
+               f"exit {r.returncode}, phrases: {[ph in r.stderr for ph in phrases]}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}",
+               [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-2:]])
+
+    def g(k, v):
+        def fn(M):
+            M["grading"][k] = v
+            return M
+        return fn
+
+    def wfile(M):
+        M["grading"]["witnesses"][0]["file"] = 5
+        return M
+    sign_case("i4h_sign_auditor_empty_string", g("auditor", ""), ["manifest.json: grading.auditor is a JSON string, not an object", nw])
+    sign_case("i4h_sign_witnesses_empty_object", g("witnesses", {}), ["manifest.json: grading.witnesses is a JSON object, not a list", nw])
+    sign_case("i4h_sign_witness_file_a_number", wfile, ["manifest.json: grading.witnesses[0].file is a JSON number, not a string", nw])
+
+    ans = tmp / "i4h_answer"
+    c.make_answer(tmp / "build" / "FB", ans)
+    parent = f.copy_of(tmp, fpre, "i4h_add_witness_parent_auditor_a_string")
+    mp = parent / "manifest.json"
+    M = json.loads(mp.read_text(encoding="utf-8"))
+    M["grading"]["auditor"] = "a"
+    mp.write_text(json.dumps(M, indent=1) + "\n", encoding="utf-8")
+    before = c.tree_hashes(parent)
+    r = f.run_add_witness_with(HERE / "add_witness.py", parent, ans)
+    unchanged = before == c.tree_hashes(parent)
+    phrase = "grading.auditor is a JSON string, not an object"
+    ok = r.returncode == 1 and "refused" in r.stderr and phrase in r.stderr and "Traceback" not in r.stderr and unchanged
+    details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-2:]]
+    if committed_dir is not None:
+        pc = f.copy_of(tmp, fpre, "i4h_add_witness_parent_auditor_a_string_committed")
+        (pc / "manifest.json").write_text(mp.read_text(encoding="utf-8"), encoding="utf-8")
+        b2 = c.tree_hashes(pc)
+        rc = f.run_add_witness_with(committed_dir / "add_witness.py", pc, ans)
+        details += [f"committed add_witness.py: exit {rc.returncode}, tree changed: {b2 != c.tree_hashes(pc)}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+    report("i4h_add_witness_parent_auditor_a_string", ok, f"add_witness.py exit 1, 'refused' and '{phrase}', no Traceback, the parent unchanged by hash",
+           f"exit {r.returncode}, refused {'refused' in r.stderr}, phrase {phrase in r.stderr}, Traceback {'Traceback' in r.stderr}, unchanged {unchanged}", details)
+
+
 def i3(committed):
     if committed is None:
         print("skipped  i3: --committed none, no committed checker to compare with")
@@ -617,6 +770,8 @@ def main():
         i2g(tmp, FS, forger, committed)
         i4f(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i4g(tmp, fpre, FB, FS, committed_dir, committed_sign)
+        i2h(tmp, FB, committed)
+        i4h(tmp, fpre, FS, committed_dir)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
         print(f"{sum(c.RESULTS)} of {len(c.RESULTS)} cases gave the expected result; MISMATCH {mism}")
