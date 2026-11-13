@@ -64,12 +64,23 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
        written" with the V2b signer line, the parent unchanged; i4e add_witness.py on a copy of Fpre with "junk" appended: exit 1, "is not an
        object", unchanged. The committed sign.py and add_witness.py are run on the same copies and their exit, Traceback and tree change are
        printed (the RED: a traceback, or a tool that writes).
+  i2g  V2d (the fourteenth re-gate's sealed C09, 13 Nov 2026 11:3xZ): an allowed_signers line `* <forger key>` and a witness file re-signed by
+       the forger under the genuine name. b2962a18 FAILed the entry by the A3 line but ALSO printed "signed by <name>, verified" and counted it,
+       because ssh-keygen reads a principal as a pattern. Now: K13 FAIL with "allowed_signers: principal '*' is a pattern (ssh-keygen reads *, ?
+       and ! in a principal as a pattern; a record names its principals plainly)" and the A3 line, NO verified line for that file, one verified
+       line fewer than the clean FS, exit 1, no Traceback. Plus a `a?b` principal line alone: the pattern line, the clean verified count. The
+       committed checker's K13 block is printed (the RED: the verified line beside the FAIL).
+  i4f  T02 and T05 of the same re-gate: sign.py on a signatures.json that is invalid JSON, or not UTF-8: exit 1, "signatures.json is
+       unreadable" and "nothing written", no Traceback, every file unchanged (the committed sign.py: a traceback, printed); sign.py on `{}`:
+       the message says "fix signatures.json before signing" (was "fix the file"); add_witness.py on a genuine parent with an answer whose
+       signatures-entry.json has signer.name 5: exit 1, "refused, nothing written" with "the answer's signatures[0]: field signer.name is a
+       JSON number", the parent unchanged by hash (the committed add_witness.py: the parent CHANGED, half-written, printed).
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
 Exit 0 only when every expectation holds; one line per case "ok/MISMATCH <case>: expected ... observed ...", the K11 and K13 blocks
 printed under the cases that touch them."""
-import json, pathlib, shutil, sys, tempfile
+import json, pathlib, shutil, subprocess, sys, tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -390,6 +401,97 @@ def i4(tmp, fpre, FB, FS, committed_dir, committed_sign):
     aw_case("i4e_add_witness_refuses_parent_non_object_entry", append_junk, f"the snapshot's signatures[{len(psigs)}]: entry {JUNK!r} is not an object")
 
 
+PATTERN_WHY = "(ssh-keygen reads *, ? and ! in a principal as a pattern; a record names its principals plainly)"
+A3_PHRASE = "is not the key allowed_signers lists for"
+
+
+def pattern_line(p):
+    return f"allowed_signers: principal '{p}' is a pattern {PATTERN_WHY}"
+
+
+def i2g(tmp, FS, forger, committed):
+    if FS is None:
+        f.not_built("i2g_star_principal_forger_resign", "K13 FAIL, the pattern line and the A3 line, no verified line for the file")
+        return
+    r0, st0, bl0 = h.run(FS)
+    n_ok0 = len(verified_lines(bl0))
+    sigs0 = f.load_sigs(FS)
+    i_wit = next(i for i, e in enumerate(sigs0) if e.get("role") == "witness")
+    wf, line = sigs0[i_wit]["file"], sigs0[i_wit]["line"]
+    d = f.copy_of(tmp, FS, "i2g_star_principal_forger_resign")
+    h.append_allowed(d, h.allowed_line("*", forger))
+    (d / (wf + ".sig")).write_bytes(h.own_sign_line(line, forger))
+    r, st, bl = h.run(d)
+    ns = h.notes(bl)
+    a3 = [l for l in ns if l.startswith(wf + ":") and A3_PHRASE in l]
+    pat = [l for l in ns if l == pattern_line("*")]
+    ver = [l for l in verified_lines(bl) if l.startswith(wf + ":")]
+    ok = (len(a3) == 1 and len(pat) == 1 and not ver and st.get("K13") == "FAIL" and len(verified_lines(bl)) == n_ok0 - 1 and r.returncode == 1
+          and "Traceback" not in r.stderr)
+    report("i2g_star_principal_forger_resign", ok, f"K13 FAIL, one A3 line for {wf}, the pattern line for '*', no verified line for {wf}, {n_ok0 - 1} verified lines, exit 1, no Traceback",
+           f"K13 {st.get('K13')}, A3 lines {len(a3)}, pattern lines {len(pat)}, verified lines for the file {len(ver)}, verified {len(verified_lines(bl))}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}",
+           c.block_lines(bl, "K13") + h.committed_block(committed, d))
+    d2 = f.copy_of(tmp, FS, "i2g_question_mark_principal_alone")
+    h.append_allowed(d2, h.allowed_line("a?b", forger))
+    r, st, bl = h.run(d2)
+    ns = h.notes(bl)
+    pat = [l for l in ns if l == pattern_line("a?b")]
+    ok = len(pat) == 1 and st.get("K13") == "FAIL" and len(verified_lines(bl)) == n_ok0 and r.returncode == 1 and "Traceback" not in r.stderr
+    report("i2g_question_mark_principal_alone", ok, f"K13 FAIL with the pattern line for 'a?b', {n_ok0} verified lines (nothing re-signed), exit 1, no Traceback",
+           f"K13 {st.get('K13')}, pattern lines {len(pat)}, verified {len(verified_lines(bl))}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}",
+           c.block_lines(bl, "K13") + h.committed_block(committed, d2))
+
+
+def i4f(tmp, fpre, FB, FS, committed_dir, committed_sign):
+    if FS is None:
+        f.not_built("i4f_tools_unreadable_and_answer_shapes", "sign.py and add_witness.py exit 1 by name, nothing written")
+        return
+    sources_args = ["--role", "sources", "--key", str(m.KEYS["auditor"]), "--identity", p.AUDITOR]
+
+    def sign_case(name, raw, phrases):
+        d = f.copy_of(tmp, FS, name)
+        (d / "signatures.json").write_bytes(raw)
+        before = c.tree_hashes(d)
+        r = h.run_sign(d, sources_args)
+        unchanged = before == c.tree_hashes(d)
+        ok = r.returncode == 1 and all(ph in r.stderr for ph in phrases) and "Traceback" not in r.stderr and unchanged
+        details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-3:]]
+        if committed_sign is not None:
+            dc = f.copy_of(tmp, FS, name + "_committed")
+            (dc / "signatures.json").write_bytes(raw)
+            b2 = c.tree_hashes(dc)
+            rc = h.run_sign(dc, sources_args, committed_sign)
+            details += [f"committed sign.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, tree changed: {b2 != c.tree_hashes(dc)}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"sign.py exit 1, stderr with {phrases}, no Traceback, every file unchanged by hash",
+               f"exit {r.returncode}, phrases: {[ph in r.stderr for ph in phrases]}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+    sign_case("i4f_sign_refuses_invalid_json", b"not json{", ["signatures.json is unreadable", "nothing written"])
+    sign_case("i4f_sign_refuses_non_utf8", b"\xff\xfe[]", ["signatures.json is unreadable", "nothing written"])
+    sign_case("i4f_sign_non_list_message_names_the_file", b"{}", ["is not a list of signature entries", "fix signatures.json before signing, nothing written"])
+
+    ans = tmp / "i4f_answer"
+    c.make_answer(FB, ans)
+    se_p = ans / "signatures-entry.json"
+    se = json.loads(se_p.read_text(encoding="utf-8"))
+    se["signer"]["name"] = 5
+    se_p.write_text(json.dumps(se, indent=1) + "\n", encoding="utf-8")
+    phrase = "the answer's " + v2c_line(0, "name", "number")
+    parent = f.copy_of(tmp, fpre, "i4f_parent_answer_signer_name_number")
+    before = c.tree_hashes(parent)
+    r = f.run_add_witness_with(HERE / "add_witness.py", parent, ans)
+    unchanged = before == c.tree_hashes(parent)
+    ok = r.returncode == 1 and "refused, nothing written" in r.stderr and phrase in r.stderr and "Traceback" not in r.stderr and unchanged
+    details = [f"stderr: {l}" for l in r.stderr.strip().splitlines()[-3:]]
+    if committed_dir is not None:
+        pc = f.copy_of(tmp, fpre, "i4f_parent_committed")
+        b2 = c.tree_hashes(pc)
+        rc = f.run_add_witness_with(committed_dir / "add_witness.py", pc, ans)
+        a2 = c.tree_hashes(pc)
+        changed = sorted(k for k in set(b2) | set(a2) if b2.get(k) != a2.get(k))
+        details += [f"committed add_witness.py: exit {rc.returncode}, Traceback: {'Traceback' in rc.stderr}, tree changed: {b2 != a2} ({len(changed)} file(s)), last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+    report("i4f_add_witness_refuses_answer_signer_name_number", ok, f"add_witness.py exit 1, 'refused, nothing written' with '{phrase}', no Traceback, the parent unchanged by hash",
+           f"exit {r.returncode}, refused: {'refused, nothing written' in r.stderr}, phrase: {phrase in r.stderr}, Traceback: {'Traceback' in r.stderr}, unchanged: {unchanged}", details)
+
+
 def i3(committed):
     if committed is None:
         print("skipped  i3: --committed none, no committed checker to compare with")
@@ -424,6 +526,10 @@ def main():
         committed_dir = None if c.SKIP_COMMITTED else f.committed_tools(tmp)
         committed_sign = None if c.SKIP_COMMITTED else h.committed_sign_dir(tmp)
         i4(tmp, fpre, FB, FS, committed_dir, committed_sign)
+        forger = tmp / "build" / "keys" / "fixture-forger-i"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "fixture-forger-i", "-f", str(forger)], check=True, capture_output=True)
+        i2g(tmp, FS, forger, committed)
+        i4f(tmp, fpre, FB, FS, committed_dir, committed_sign)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
         print(f"{sum(c.RESULTS)} of {len(c.RESULTS)} cases gave the expected result; MISMATCH {mism}")
