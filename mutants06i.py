@@ -40,6 +40,14 @@ Cases (`--committed PATH | none` the committed check.py; the default is git HEAD
   i2c  FS with signatures.json replaced by "x" : the same line with "string".
   i2d  FS with null inserted at index 0 (before the auditor entry): the V2 line for index 0, the auditor entry still verified, the sources
        ok line still present, exit 1.
+  i2e  V2b (the twelfth re-gate's sealed Q06, 13 Nov 2026 10:3xZ: an OBJECT entry with a non-object `signer` or a non-string `signature` still
+       crashed 5573fee2 with AttributeError or TypeError and no SUMMARY): FS with the auditor entry's signer replaced by the string
+       "just-a-name"; a witness entry's signer replaced by 5; an extra object entry whose signer is ["n"]; the auditor entry's signature
+       replaced by a list; a witness entry's role replaced by 7; an entry's sha256 replaced by null. Each: K13 FAIL with the V2b line
+       "signatures[<i>]: field <f> is a JSON <kind>, not a <string|object> (role, file, sha256, line and signature are strings, signer an
+       object): the entry is not checked", the other entries still verified (a damaged auditor entry also costs the sources entry its
+       verified line: no auditor signature to match), a SUMMARY line, exit 1, no Traceback. The committed checker's SUMMARY and Traceback
+       are printed (the RED).
   i3   every folder under snapshots/, examples/ and fixtures/: committed vs cut byte-identical, exit codes equal, no exception.
 
 usage: python3 -I mutants06i.py [--committed PATH | --committed none]
@@ -166,6 +174,61 @@ def i2(tmp, FS, committed):
            c.block_lines(bl, "K13"))
 
 
+V2B_TAIL = "(role, file, sha256, line and signature are strings, signer an object): the entry is not checked"
+
+
+def v2b_line(i, field, kind, want):
+    return f"signatures[{i}]: field {field} is a JSON {kind}, not {want} {V2B_TAIL}"
+
+
+def i2e(tmp, FS, committed):
+    if FS is None:
+        f.not_built("i2e_object_entries_with_wrong_field_shapes", "K13 FAIL by field name, SUMMARY present, exit 1, no Traceback")
+        return
+    r0, st0, bl0 = h.run(FS)
+    n_ok0 = len(verified_lines(bl0))
+    sigs0 = f.load_sigs(FS)
+    i_aud = next(i for i, e in enumerate(sigs0) if e.get("role") == "auditor")
+    i_wit = next(i for i, e in enumerate(sigs0) if e.get("role") == "witness")
+
+    def case(name, mutate, want_line, lost):
+        """mutate(sigs) edits the list in place and returns nothing; lost = how many verified lines the damaged entry costs."""
+        d = f.copy_of(tmp, FS, name)
+        sigs = f.load_sigs(d)
+        mutate(sigs)
+        f.save_sigs(d, sigs)
+        r, st, bl = h.run(d)
+        ns = h.notes(bl)
+        got = [l for l in ns if V2B_TAIL in l]
+        ok = (got == [want_line] and st.get("K13") == "FAIL" and len(verified_lines(bl)) == n_ok0 - lost and summary_of(r) is not None
+              and r.returncode == 1 and "Traceback" not in r.stderr)
+        details = c.block_lines(bl, "K13")
+        if committed is not None:
+            rc, _, _ = c.run_check(committed, d)
+            details += [f"committed checker (exit {rc.returncode}): SUMMARY {summary_of(rc)!r}, Traceback: {'Traceback' in rc.stderr}, last stderr line: {(rc.stderr.strip().splitlines() or [''])[-1][:160]}"]
+        report(name, ok, f"K13 FAIL with exactly '{want_line}', {n_ok0 - lost} verified lines, a SUMMARY line, exit 1, no Traceback",
+               f"K13 {st.get('K13')}, V2b lines {got}, verified {len(verified_lines(bl))}, SUMMARY {summary_of(r) is not None}, exit {r.returncode}, Traceback {'Traceback' in r.stderr}", details)
+
+    def set_field(i, k, v):
+        def m(sigs):
+            sigs[i][k] = v
+        return m
+
+    def add_entry(v):
+        def m(sigs):
+            e = json.loads(json.dumps(sigs[i_wit]))
+            e["signer"] = v
+            sigs.append(e)
+        return m
+    # a damaged AUDITOR entry costs two verified lines: its own, and the sources entry's (no auditor signature to match it: the right outcome)
+    case("i2e_auditor_signer_a_string", set_field(i_aud, "signer", "just-a-name"), v2b_line(i_aud, "signer", "string", "an object"), 2)
+    case("i2e_witness_signer_a_number", set_field(i_wit, "signer", 5), v2b_line(i_wit, "signer", "number", "an object"), 1)
+    case("i2e_extra_entry_signer_a_list", add_entry(["n"]), v2b_line(len(sigs0), "signer", "array", "an object"), 0)
+    case("i2e_auditor_signature_a_list", set_field(i_aud, "signature", ["audit.jsonl.sig"]), v2b_line(i_aud, "signature", "array", "a string"), 2)
+    case("i2e_witness_role_a_number", set_field(i_wit, "role", 7), v2b_line(i_wit, "role", "number", "a string"), 1)
+    case("i2e_witness_sha256_null", set_field(i_wit, "sha256", None), v2b_line(i_wit, "sha256", "null", "a string"), 1)
+
+
 def i3(committed):
     if committed is None:
         print("skipped  i3: --committed none, no committed checker to compare with")
@@ -195,6 +258,7 @@ def main():
         FS = f.build_signed(tmp, FB, "FS")
         i1(tmp, F, committed)
         i2(tmp, FS, committed)
+        i2e(tmp, FS, committed)
         i3(committed)
         mism = sum(1 for r in c.RESULTS if not r)
         print(f"{sum(c.RESULTS)} of {len(c.RESULTS)} cases gave the expected result; MISMATCH {mism}")
