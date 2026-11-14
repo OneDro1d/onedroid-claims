@@ -289,11 +289,190 @@ def bound_digest(M):
     return hashlib.sha256(json.dumps(bound_sections(M), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def _canon_sha(v):
+    return hashlib.sha256(json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def sources_digest(M):
+    """What the auditor's `sources` signature covers (0.7, 14 Nov 2026): on 0.7 and later the bound digest over SIX sections, the five
+    bound sections plus `links` (its sha256 in canonical JSON, null when absent), so a link is the auditor's statement and holds through
+    every witness insertion as the sources list does; before 0.7 exactly bound_digest(M), byte for byte. The witness header's `bound`
+    stays at the five sections (K11). One helper for K13, sign.py and add_witness.py."""
+    if not fmt_at_least(M, "0.7"):
+        return bound_digest(M)
+    secs = bound_sections(M)
+    secs["links"] = _canon_sha(_section(M, "links"))
+    return _canon_sha(secs)
+
+
+LINK_RELS = ("supersedes", "reaudits", "wasDerivedFrom", "partOf")
+
+
+def subject_key(M):
+    """The subject a supersedes or reaudits link must share (K16): a test-run's scenario.id, else subject.url, else subject.title."""
+    sub = M.get("subject") if isinstance(M, dict) and isinstance(M.get("subject"), dict) else {}
+    if sub.get("kind") == "test-run":
+        sc_ = sub.get("scenario") if isinstance(sub.get("scenario"), dict) else {}
+        return "subject.scenario.id", sc_.get("id")
+    if isinstance(sub.get("url"), str) and sub["url"]:
+        return "subject.url", sub["url"]
+    return "subject.title", sub.get("title")
+
+
+def _manifest_hash_at(folder):
+    """sha256 of folder/manifest.json when it is a regular file reached through no symbolic link, else None."""
+    mp = os.path.join(folder, "manifest.json")
+    if os.path.islink(folder) or os.path.islink(mp) or not os.path.isfile(mp):
+        return None
+    return sha256(mp)
+
+
 def links_check(snap, M, root):
-    """K16 (0.7): the manifest's `links`. Returns (status, text, details)."""
+    """K16 (0.7, 14 Nov 2026, SPEC 3 and 5): the manifest's `links`, offline. Shape first (every fault by index and field, never a
+    traceback); a duplicate (rel, manifest_sha256) FAILs; an unknown rel WARNs and is still resolved; a target is looked up at its `path`
+    (relative to this folder, inside this folder's parent directory, or inside ROOT with --links ROOT, through no symbolic link) and then
+    under ROOT by the sha256 of each manifest.json there; not found is a WARN. A resolved target FAILs on a differing signatures.json
+    hash, an anchor its anchors.json does not list, and for supersedes and reaudits another subject or a taken_at not earlier than this
+    record's. The target itself is never checked here (check.py <target> does that). Returns (status, text, details)."""
     if "links" not in M:
         return "PASS", "no links", []
-    return "FAIL", "links: not read by this checker yet", []
+    L_ = M["links"]
+    if not isinstance(L_, list):
+        return "FAIL", "links: not a list", [f"links is a JSON {json_kind(L_)}, not a list"]
+    bad, warn, ok = [], [], []
+    boundary = os.path.abspath(root) if root is not None else os.path.abspath(snap.parent if snap.name else snap.absolute().parent)
+    where = "the --links ROOT" if root is not None else "this folder's parent directory"
+    index = {}
+
+    def root_index():
+        if not index and root is not None and os.path.isdir(root):
+            for dp, dns, fns in os.walk(root, followlinks=False):
+                if "manifest.json" in fns:
+                    h_ = _manifest_hash_at(dp)
+                    if h_:
+                        index.setdefault(h_, dp)
+            index.setdefault(None, None)
+        return index
+
+    seen, valid = {}, []
+    for i, e in enumerate(L_):
+        p_ = f"links[{i}]"
+        if not isinstance(e, dict):
+            bad.append(f"{p_} is a JSON {json_kind(e)}, not an object")
+            continue
+        n_bad = len(bad)
+        if "rel" not in e:
+            bad.append(f"{p_}.rel is missing")
+        elif not isinstance(e["rel"], str):
+            bad.append(f"{p_}.rel is a JSON {json_kind(e['rel'])}, not a string")
+        for k_ in ("note",):
+            if e.get(k_) is not None and not isinstance(e[k_], str):
+                bad.append(f"{p_}.{k_} is a JSON {json_kind(e[k_])}, not a string or null")
+        t_ = e.get("target")
+        full = None
+        if "target" not in e:
+            bad.append(f"{p_}.target is missing")
+        elif not isinstance(t_, dict):
+            bad.append(f"{p_}.target is a JSON {json_kind(t_)}, not an object")
+        else:
+            h_ = t_.get("manifest_sha256")
+            if "manifest_sha256" not in t_:
+                bad.append(f"{p_}.target.manifest_sha256 is missing")
+            elif not (isinstance(h_, str) and HEX64.fullmatch(h_)):
+                bad.append(f"{p_}.target.manifest_sha256 is not 64 lower-case hex: {h_!r}"[:200])
+            s_ = t_.get("signatures_sha256")
+            if s_ is not None and not (isinstance(s_, str) and HEX64.fullmatch(s_)):
+                bad.append(f"{p_}.target.signatures_sha256 is not 64 lower-case hex or null: {s_!r}"[:200])
+            for k_ in ("location",):
+                if t_.get(k_) is not None and not isinstance(t_[k_], str):
+                    bad.append(f"{p_}.target.{k_} is a JSON {json_kind(t_[k_])}, not a string or null")
+            if t_.get("anchor") is not None and not isinstance(t_["anchor"], dict):
+                bad.append(f"{p_}.target.anchor is a JSON {json_kind(t_['anchor'])}, not an object or null")
+            pth = t_.get("path")
+            if pth is not None:
+                if not isinstance(pth, str):
+                    bad.append(f"{p_}.target.path is a JSON {json_kind(pth)}, not a string or null")
+                elif not pth:
+                    bad.append(f"{p_}.target.path is empty")
+                elif os.path.isabs(pth) or pth.startswith(("/", "\\")):
+                    bad.append(f"{p_}.target.path is absolute: a link names its target relative to this folder")
+                else:
+                    full = os.path.normpath(os.path.join(os.path.abspath(snap), pth))
+                    if full == boundary or os.path.commonpath([full, boundary]) != boundary:
+                        bad.append(f"{p_}.target.path leaves {where}")
+                        full = None
+                    else:
+                        cur = boundary
+                        for part in os.path.relpath(full, boundary).split(os.sep):
+                            cur = os.path.join(cur, part)
+                            if os.path.islink(cur):
+                                bad.append(f"{p_}.target.path passes through a symbolic link: the checker follows none")
+                                full = None
+                                break
+        if len(bad) > n_bad:
+            continue
+        key_ = (e["rel"], t_["manifest_sha256"])
+        if key_ in seen:
+            bad.append(f"{p_}: a duplicate of links[{seen[key_]}] (rel {e['rel']!r}, manifest sha256:{key_[1][:12]}…)")
+            continue
+        seen[key_] = i
+        valid.append((i, e, full))
+
+    for i, e, full in valid:
+        p_, rel, t_ = f"links[{i}]", e["rel"], e["target"]
+        want = t_["manifest_sha256"]
+        if rel not in LINK_RELS:
+            warn.append(f"{p_}: rel {rel!r} is not one of {', '.join(LINK_RELS)}: read as a relation this checker does not know, the target still resolved")
+        found, via, other = None, None, None
+        if full is not None:
+            h_ = _manifest_hash_at(full)
+            if h_ == want:
+                found, via = full, f"at its path {t_['path']}"
+            elif h_ is not None:
+                other = h_
+        if found is None and root is not None:
+            dp = root_index().get(want)
+            if dp:
+                found, via = dp, "under --links ROOT"
+        if found is None:
+            warn.append(f"{p_}: target manifest sha256:{want[:12]}… not at hand, hash recorded, not resolved"
+                        + (f" (the folder at its path holds another manifest, sha256:{other[:12]}…)" if other else ""))
+            continue
+        n_bad = len(bad)
+        try:
+            TM = json.loads(pathlib.Path(found, "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError):
+            TM = None
+        if not isinstance(TM, dict) or TM.get("format") not in FORMATS:
+            warn.append(f"{p_}: the target's format {(TM.get('format') if isinstance(TM, dict) else None)!r} is not one this checker reads; the hash still holds")
+        s_ = t_.get("signatures_sha256")
+        if s_ is not None:
+            sp = os.path.join(found, "signatures.json")
+            got = sha256(sp) if os.path.isfile(sp) and not os.path.islink(sp) else None
+            if got != s_:
+                bad.append(f"{p_}: the target's signatures.json sha256 {str(got)[:12]}… is not the link's {s_[:12]}…")
+        if t_.get("anchor") is not None:
+            try:
+                ta = json.loads(pathlib.Path(found, "anchors.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError, UnicodeDecodeError):
+                ta = None
+            if not (isinstance(ta, list) and any(isinstance(a_, dict) and a_.get("ref") == t_["anchor"] for a_ in ta)):
+                bad.append(f"{p_}: the target's anchors.json has no entry whose ref is the link's anchor")
+        if rel in ("supersedes", "reaudits") and isinstance(TM, dict):
+            kf, kv = subject_key(M)
+            tf, tv = subject_key(TM)
+            if (kf, kv) != (tf, tv):
+                bad.append(f"{p_}: {rel} a target whose {tf} is {tv!r} and this record's {kf} is {kv!r}: a re-audit of another subject")
+            t0, t1 = parse_rfc3339(TM.get("taken_at")), parse_rfc3339(M.get("taken_at"))
+            if t0 is None or t1 is None:
+                bad.append(f"{p_}: {rel} needs both taken_at as times (the target's {TM.get('taken_at')!r}, this record's {M.get('taken_at')!r})")
+            elif not t0 < t1:
+                bad.append(f"{p_}: {rel} a target taken at {TM.get('taken_at')}, which is not earlier than this record's {M.get('taken_at')}")
+        if len(bad) == n_bad:
+            kf, kv = subject_key(TM if isinstance(TM, dict) else {})
+            ok.append(f"{p_}: {rel} manifest sha256:{want[:12]}… resolved {via}: {kf} {kv!r}, taken_at {(TM or {}).get('taken_at') if isinstance(TM, dict) else None}")
+    status = "FAIL" if bad else ("WARN" if warn else "PASS")
+    return status, f"{len(L_)} link(s): {len(ok)} resolved, {len(warn)} note(s), {len(bad)} broken", bad + warn + ok
 
 
 def allowed_keys(path):
@@ -1467,9 +1646,10 @@ def _main(argv, R):
                 if role == "sources":
                     # R2: the entry's sha256 is the bound digest of THIS record's manifest, never the manifest's own hash: the five sections
                     # never change under an allowed change, so the auditor's word holds through every witness insertion
-                    h = bound_digest(M)
+                    h = sources_digest(M)  # 0.7: six sections (links too); before 0.7 exactly bound_digest
                     if e.get("sha256") != h:
-                        bad.append(f"manifest.json: the sources signature is over bound sections sha256 {str(e.get('sha256'))[:12]}… and this record's are {h[:12]}…: subject, sources, pages, profile or sessions changed under the auditor")
+                        bad.append(f"manifest.json: the sources signature is over bound sections sha256 {str(e.get('sha256'))[:12]}… and this record's are {h[:12]}…: "
+                                   + ("subject, sources, pages, profile, sessions or links changed under the auditor" if fmt_at_least(M, "0.7") else "subject, sources, pages, profile or sessions changed under the auditor"))
                         continue
                 else:
                     h = sha256(fp) if fp.exists() else None
