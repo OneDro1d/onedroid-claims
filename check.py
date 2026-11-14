@@ -23,7 +23,17 @@ auditor's pointers and candidate quotes without a verdict, K8 and K12 WARN that 
 import traceback
 import base64, datetime, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
 
-FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6"}
+FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7"}
+FORMAT_RE = re.compile(r"^claims-snapshot/0\.([0-9]{1,3})$")
+
+
+def fmt_at_least(M, minor):
+    """True when the manifest's format is claims-snapshot/0.N with N at least the minor of `minor` ("0.6"), else False (a missing,
+    non-string or foreign format included). 0.7 (14 Nov 2026): every rule that was keyed on the format being exactly 0.6 reads
+    "0.6 or later" through this one helper, so a 0.7 folder inherits every 0.6 rule; the new 0.7 rules read "0.7 or later"."""
+    f_ = M.get("format") if isinstance(M, dict) else None
+    m_ = FORMAT_RE.match(f_) if isinstance(f_, str) else None
+    return m_ is not None and int(m_.group(1)) >= int(str(minor).split(".")[1])
 WITNESS_VERDICTS = {"EVIDENCED", "NO EVIDENCE PUBLISHED", "CONTRADICTED", "EVIDENCE AVAILABLE ON REQUEST", "WITHDRAWN", "MISSING CLAIM", "UNDECIDED"}  # UNDECIDED: 0.6, a witness never the primary; never in VERDICTS, so never in claims.jsonl
 WITNESS_KINDS = {"human", "agent", "model"}  # the witness header `kind` (0.6); absent means human
 KEY_LIST = "keys/model-keys.jsonl"
@@ -277,6 +287,13 @@ def bound_digest(M):
     signature covers (`claims-snapshot/0.4 sources manifest.json sha256:<this>`). The five sections never change under an allowed change, so
     the signature holds through every witness insertion where a `manifest` signature cannot. One helper for K13, sign.py and add_witness.py."""
     return hashlib.sha256(json.dumps(bound_sections(M), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def links_check(snap, M, root):
+    """K16 (0.7): the manifest's `links`. Returns (status, text, details)."""
+    if "links" not in M:
+        return "PASS", "no links", []
+    return "FAIL", "links: not read by this checker yet", []
 
 
 def allowed_keys(path):
@@ -584,6 +601,7 @@ def _main(argv, R):
     strict = "--strict" in argv
     want_json = "--json" in argv
     keys_arg = pathlib.Path(argv[argv.index("--keys") + 1]) if "--keys" in argv and argv.index("--keys") + 1 < len(argv) else None
+    links_root = pathlib.Path(argv[argv.index("--links") + 1]) if "--links" in argv and argv.index("--links") + 1 < len(argv) else None
 
     # K1 manifest
     try:
@@ -620,7 +638,7 @@ def _main(argv, R):
         missing.append(f"grading.profile={g.get('profile')!r} not in {sorted(PROFILES)}")
     pre_bad = []  # pre-witness (SPEC 14): what the stage forbids, said as such
     if pre:
-        if M.get("format") != "claims-snapshot/0.6":
+        if not fmt_at_least(M, "0.6"):  # 0.7: "0.6 or later" (was: exactly 0.6)
             pre_bad.append(f"format {M.get('format')!r}: the stage exists from claims-snapshot/0.6")
         for k in ("score", "claims_sha256"):
             if k in M:
@@ -1064,7 +1082,7 @@ def _main(argv, R):
     if is_04:
         bad, witnesses, w_rows_by_name, primary = [], g.get("witnesses") or [], {}, None
         k11_warn = []  # test-run (SPEC 13): a re-run result the folder does not hold
-        fmt06 = M.get("format") == "claims-snapshot/0.6"
+        fmt06 = fmt_at_least(M, "0.6")  # 0.7: "0.6 or later" (was: exactly 0.6), read at K1 kind, K12 undecided and K13 file name
         w_hdr, w_kind, w_kind_file, w_und = {}, {}, {}, {}  # 0.6: header, effective kind, kind by file, UNDECIDED count, per witness
         kind_bad = []   # a `kind` outside human | agent | model, said on K1 (FAIL in 0.6, WARN before)
         try:
@@ -1703,6 +1721,10 @@ def _main(argv, R):
             if s_.get("complete") is False or (s_.get("gaps") or 0):
                 warn.append(f"sessions[{i}] ({s_.get('role')}): the recorder says the record is incomplete ({s_.get('gaps')} gap(s))")
         R.add("K15", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(sess or [])} session record(s) listed by hash" if not bad else f"{len(bad)} incomplete", bad + warn)
+
+    # K16 links (0.7, 14 Nov 2026, SPEC 3 and 5): only for a 0.7 or later folder, so every older folder's output is unchanged
+    if fmt_at_least(M, "0.7"):
+        R.add("K16", *links_check(snap, M, links_root))
 
     # K10 live fetch: every source a proof or counter uses, by file or by url; status proofs compared live;
     # audited pages with a url re-fetched and every claim fragment looked for again
