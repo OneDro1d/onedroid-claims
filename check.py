@@ -2266,7 +2266,7 @@ def _main(argv, R):
 
         # K14 anchors: each over the hash of a file in the folder
         anc_p = snap / "anchors.json"
-        bad, warn, info = [], [], []
+        bad, warn, info, g_info = [], [], [], []  # g_info: 0.7 gvui lines, printed after the bindings and not counted as one
         if not anc_p.exists():
             warn.append("no anchors.json: nothing fixes the signatures in time" + ("; no anchor exists yet (test-run: an anchor over the signatures file is optional until armarium ships)" if profile == "test-run" else ""))
         else:
@@ -2301,7 +2301,7 @@ def _main(argv, R):
                             bad.append(f"anchors[{i}]: gvui does not recompute from the ref (gv1 of namespace {GVUI_NS}, anchor/<chain>/<block>, the correlation id, the signer and the anchor time)"
                                        + ("" if want_g is not None else ": the ref lacks a field it needs"))
                         else:
-                            info.append(f"anchors[{i}]: gvui recomputes from the ref ({want_g[:24]}…)")
+                            g_info.append(f"anchors[{i}]: gvui recomputes from the ref ({want_g[:24]}…)")
                 pf = a.get("proof_file")
                 if pf and not (snap / pf).exists():
                     bad.append(f"anchors[{i}]: proof_file {pf!r} missing")
@@ -2316,7 +2316,7 @@ def _main(argv, R):
                     info.append(f"anchors[{i}]: {hashes[over]} anchored by {a.get('method')} ({a.get('ref')}) at {a.get('time')}: binding holds, the anchor itself is not checked by this script")
         if profile == "test-run" and anc_p.exists() and not (info or warn or bad):
             warn.append("no anchor exists yet: anchors.json lists none (test-run: an anchor over the signatures file is optional until armarium ships)")
-        R.add("K14", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(info)} anchor binding(s) hold, {len(warn)} note(s), {len(bad)} broken", bad + warn + info)
+        R.add("K14", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(info)} anchor binding(s) hold, {len(warn)} note(s), {len(bad)} broken", bad + warn + info + g_info)
 
         # K15 session records, by hash
         sess = g.get("sessions")
