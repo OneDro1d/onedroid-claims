@@ -478,8 +478,9 @@ def links_check(snap, M, root):
             if got != s_:
                 bad.append(f"{p_}: the target's signatures.json sha256 {str(got)[:12]}… is not the link's {s_[:12]}…")
         if t_.get("anchor") is not None:
-            try:
-                ta = json.loads(pathlib.Path(found, "anchors.json").read_text(encoding="utf-8"))
+            ap = os.path.join(found, "anchors.json")
+            try:  # like signatures.json and the link path: a symbolic link is never followed (gate H2, 14 Nov 2026)
+                ta = None if os.path.islink(ap) else json.loads(pathlib.Path(ap).read_text(encoding="utf-8"))
             except (OSError, ValueError, UnicodeDecodeError):
                 ta = None
             if not (isinstance(ta, list) and any(isinstance(a_, dict) and a_.get("ref") == t_["anchor"] for a_ in ta)):

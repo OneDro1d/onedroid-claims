@@ -4,13 +4,13 @@
   {
    "name": "manifest.json",
    "digest": {
-    "sha256": "7e86176facec76c84a6209406db9d6f469d2231e601b7f5375b7fee334c9cb3a"
+    "sha256": "1ef8e32d0068cb7e5649a8eb36539ccc8c902fafa39e436e94f2ebfa98a86858"
    }
   },
   {
    "name": "signatures.json",
    "digest": {
-    "sha256": "eb638ff0f2f389610415f7ede7122c14d93828e1e7721264b709f0920ee70718"
+    "sha256": "409e6ffc35237560784bf49c1728cdabe2abca0452f7639c9907c54a1481a18d"
    }
   },
   {
@@ -66,14 +66,14 @@
   },
   "auditor": {
    "principal": "fixture-auditor",
-   "key_fingerprint": "SHA256:r5XXmoapBCPqoduuuKV8v+4urcj46IjdtrQiPRRA1+c"
+   "key_fingerprint": "SHA256:Y3MBjyfM3mWBuItgUQH1Bwu3iW3UIPIIxcpooZdeBs4"
   },
   "witnesses": [
    {
     "name": "alice",
     "kind": "human",
     "primary": true,
-    "key_fingerprint": "SHA256:GhTPH4wcFtpr6L7WIf/4hL7oMFC5vfmoY3qxzymbhvg",
+    "key_fingerprint": "SHA256:iH1zJgTZcMgnbN61fdAXZO8LnpNLYeO7R1Yw7VSkraQ",
     "score": {
      "band": "D",
      "contradiction_pct": 33,
@@ -83,7 +83,7 @@
   ],
   "anchors": [
    {
-    "over": "sha256:eb638ff0f2f389610415f7ede7122c14d93828e1e7721264b709f0920ee70718",
+    "over": "sha256:409e6ffc35237560784bf49c1728cdabe2abca0452f7639c9907c54a1481a18d",
     "method": "armarium",
     "ref": {
      "chain": "example-chain",
@@ -108,9 +108,9 @@
    }
   ],
   "check": {
-   "checker_sha256": "e98479f650d1746338f6db78ba3107d1db63a7af695662955f132ea097182a16",
+   "checker_sha256": "b7e558a1c6ee19650638aaeafc0cc637def28b2df49627d911dd69183f6cb78f",
    "result": "PASS",
-   "ran_at": "2026-11-14T21:51:27Z"
+   "ran_at": "2026-11-14T22:30:44Z"
   }
  }
 }
