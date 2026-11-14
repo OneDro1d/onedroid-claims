@@ -659,6 +659,400 @@ def sshsig_fingerprint(key):
     return "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(key.split()[1])).digest()).decode("ascii").rstrip("=")
 
 
+# ---- 0.7 exports (14 Nov 2026, SPEC 15): an in-toto Statement v1 in a DSSE envelope and a W3C VC 2.0 credential (eddsa-jcs-2022), written
+# OUTSIDE the folder by export.py and verified here by --export DIR. Everything below is standard library: the Ed25519 verification is RFC
+# 8032's (5.1.7, cofactorless, S < L and canonical point encodings required), so the CI pin of this file covers the verifier too.
+STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
+PRED_TYPE = "https://github.com/OneDro1d/onedroid-claims/blob/main/SPEC.md#claims-snapshot-v0.7"
+DSSE_PAYLOAD_TYPE = "application/vnd.in-toto+json"
+VC_CONTEXT = ["https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/undefined-terms/v2"]
+VC_TYPE = ["VerifiableCredential", "ClaimsSnapshotCredential"]
+EXPORT_FILES = ("statement.intoto.json", "statement.dsse.json", "credential.vc.json")
+
+_ED_P = 2 ** 255 - 19
+_ED_L = 2 ** 252 + 27742317777372353535851937790883648493
+_ED_D = -121665 * pow(121666, _ED_P - 2, _ED_P) % _ED_P
+_ED_I = pow(2, (_ED_P - 1) // 4, _ED_P)
+
+
+def _ed_add(P, Q):
+    A = (P[1] - P[0]) * (Q[1] - Q[0]) % _ED_P
+    B = (P[1] + P[0]) * (Q[1] + Q[0]) % _ED_P
+    C = 2 * P[3] * Q[3] * _ED_D % _ED_P
+    D = 2 * P[2] * Q[2] % _ED_P
+    E, F, G, H = B - A, D - C, D + C, B + A
+    return (E * F % _ED_P, G * H % _ED_P, F * G % _ED_P, E * H % _ED_P)
+
+
+def _ed_mul(s, P):
+    Q = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            Q = _ed_add(Q, P)
+        P = _ed_add(P, P)
+        s >>= 1
+    return Q
+
+
+def _ed_x(y, sign):
+    if y >= _ED_P:
+        return None
+    x2 = (y * y - 1) * pow(_ED_D * y * y + 1, _ED_P - 2, _ED_P) % _ED_P
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (_ED_P + 3) // 8, _ED_P)
+    if (x * x - x2) % _ED_P:
+        x = x * _ED_I % _ED_P
+    if (x * x - x2) % _ED_P:
+        return None
+    if (x & 1) != sign:
+        x = _ED_P - x
+    return x
+
+
+def _ed_point(b):
+    if len(b) != 32:
+        return None
+    y = int.from_bytes(b, "little")
+    sign, y = y >> 255, y & ((1 << 255) - 1)
+    x = _ed_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % _ED_P)
+
+
+_ED_G = _ed_point((4 * pow(5, _ED_P - 2, _ED_P) % _ED_P).to_bytes(32, "little"))
+
+
+def ed25519_verify(pub, msg, sig):
+    """RFC 8032 5.1.7 Ed25519 verification (pure, cofactorless): True or False, never an exception for wrong-shaped input."""
+    if not (isinstance(pub, bytes) and isinstance(sig, bytes) and isinstance(msg, bytes)) or len(pub) != 32 or len(sig) != 64:
+        return False
+    A, R = _ed_point(pub), _ed_point(sig[:32])
+    s = int.from_bytes(sig[32:], "little")
+    if A is None or R is None or s >= _ED_L:
+        return False
+    h = int.from_bytes(hashlib.sha512(sig[:32] + pub + msg).digest(), "little") % _ED_L
+    sB, Rh = _ed_mul(s, _ED_G), _ed_add(R, _ed_mul(h, A))
+    return (sB[0] * Rh[2] - Rh[0] * sB[2]) % _ED_P == 0 and (sB[1] * Rh[2] - Rh[1] * sB[2]) % _ED_P == 0
+
+
+def dsse_pae(payload_type, body):
+    """DSSE v1 pre-authentication encoding (dsse protocol.md): "DSSEv1" SP LEN(type) SP type SP LEN(body) SP body, lengths in bytes."""
+    return b"DSSEv1 %d %s %d %s" % (len(payload_type), payload_type, len(body), body)
+
+
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def b58encode(b):
+    n, out = int.from_bytes(b, "big"), ""
+    while n:
+        n, r = divmod(n, 58)
+        out = _B58[r] + out
+    return "1" * (len(b) - len(b.lstrip(b"\0"))) + out
+
+
+def b58decode(s):
+    """base58-btc to bytes, else None."""
+    if not isinstance(s, str) or any(c not in _B58 for c in s):
+        return None
+    n = 0
+    for c in s:
+        n = n * 58 + _B58.index(c)
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
+    return b"\0" * (len(s) - len(s.lstrip("1"))) + body
+
+
+def jcs(v):
+    """RFC 8785 JSON Canonicalization Scheme for the values these exports hold: objects with members sorted by UTF-16 code units, no
+    whitespace, strings escaped as ECMAScript JSON.stringify does, integers as decimals. A non-integer or out-of-range number raises."""
+    if v is None:
+        return "null"
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if isinstance(v, int):
+        if abs(v) > 2 ** 53:
+            raise ValueError("JCS: an integer beyond 2^53 is not used in this format")
+        return str(v)
+    if isinstance(v, float):
+        if v.is_integer() and abs(v) <= 2 ** 53:
+            return str(int(v))
+        raise ValueError("JCS: a non-integer number is not used in this format")
+    if isinstance(v, str):
+        v.encode("utf-8")  # a lone surrogate raises
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, list):
+        return "[" + ",".join(jcs(x) for x in v) + "]"
+    if isinstance(v, dict):
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + jcs(v[k]) for k in sorted(v, key=lambda k: k.encode("utf-16-be"))) + "}"
+    raise ValueError(f"JCS: a {type(v).__name__} is not JSON")
+
+
+def ssh_ed25519_raw(key):
+    """The 32 raw bytes of an `ssh-ed25519 <base64>` key, else None."""
+    try:
+        kt, b64 = key.split()[:2]
+        blob = base64.b64decode(b64, validate=True)
+    except (ValueError, AttributeError):
+        return None
+    if kt != "ssh-ed25519" or len(blob) != 51 or blob[:15] != b"\0\0\0\x0bssh-ed25519" or blob[15:19] != b"\0\0\0\x20":
+        return None
+    return blob[19:]
+
+
+def did_key(pub32):
+    """did:key of an Ed25519 key: multibase base58-btc ("z") of the Multikey header 0xed01 and the 32 bytes (vc-di-eddsa, Multikey)."""
+    return "did:key:z" + b58encode(b"\xed\x01" + pub32)
+
+
+def _sig_entries(snap):
+    try:
+        s_ = json.loads((snap / "signatures.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return []
+    return [e for e in s_ if isinstance(e, dict) and entry_shape_fault(e) is None] if isinstance(s_, list) else []
+
+
+def version_key(snap):
+    """(key, signature file, signed_at or None) of whoever last stood behind this version (SPEC 15): the key inside manifest.json.sig when
+    signatures.json has a manifest entry naming it, else the key inside audit.jsonl.sig; None when neither is readable."""
+    sigs = _sig_entries(snap)
+    man = next((e for e in sigs if e.get("role") == "manifest" and e.get("signature") == "manifest.json.sig"), None)
+    if man is not None:
+        k_ = sshsig_public_key(snap / "manifest.json.sig")
+        return (k_, "manifest.json.sig", man.get("signed_at")) if k_ else None
+    k_ = sshsig_public_key(snap / "audit.jsonl.sig") if (snap / "audit.jsonl.sig").is_file() else None
+    return (k_, "audit.jsonl.sig", None) if k_ else None
+
+
+def export_subjects(snap, M):
+    """The statement's subjects: manifest.json, signatures.json, the auditor's part, claims.jsonl when there is one, every page file."""
+    g_ = M.get("grading") if isinstance(M.get("grading"), dict) else {}
+    au_ = g_.get("auditor") if isinstance(g_.get("auditor"), dict) else {}
+    names = ["manifest.json", "signatures.json", au_.get("file") or "audit.jsonl", "claims.jsonl"] + [p_.get("file") for p_ in (M.get("pages") or []) if isinstance(p_, dict)]
+    out, seen = [], set()
+    for n_ in names:
+        if isinstance(n_, str) and n_ not in seen and (snap / n_).is_file() and not (snap / n_).is_symlink():
+            seen.add(n_)
+            out.append({"name": n_, "digest": {"sha256": sha256(snap / n_)}})
+    return out
+
+
+def export_predicate(snap, M, check_block, location):
+    """The predicate: a summary copied from the folder or recomputed from it, never a claim row (SPEC 15)."""
+    g_ = M.get("grading") if isinstance(M.get("grading"), dict) else {}
+    sigs = _sig_entries(snap)
+    fp_ = lambda p_: (lambda k_: sshsig_fingerprint(k_) if k_ else None)(sshsig_public_key(p_) if p_.is_file() else None)  # noqa: E731
+    a_ent = next((e for e in sigs if e.get("role") == "auditor"), None)
+    auditor = {"principal": (a_ent.get("signer") or {}).get("name") if a_ent else None, "key_fingerprint": fp_(snap / "audit.jsonl.sig")}
+    witnesses = []
+    for w in (g_.get("witnesses") or []) if isinstance(g_.get("witnesses"), list) else []:
+        if not isinstance(w, dict):
+            continue
+        kind_ = w.get("kind") if w.get("kind") in WITNESS_KINDS else "human"
+        try:
+            hdr_, _ = load_witness(snap / w["file"]) if isinstance(w.get("file"), str) and (snap / w["file"]).is_file() else (None, None)
+        except (ValueError, UnicodeDecodeError):
+            hdr_ = None
+        if isinstance(hdr_, dict) and hdr_.get("kind") in WITNESS_KINDS:
+            kind_ = hdr_["kind"]
+        se_ = next((e for e in sigs if e.get("role") == "witness" and e.get("file") == w.get("file") and isinstance(e.get("signature"), str)), None)
+        witnesses.append({"name": w.get("name"), "kind": kind_, "primary": bool(w.get("primary")),
+                          "key_fingerprint": fp_(snap / se_["signature"]) if se_ else None, "score": w.get("score")})
+    try:
+        anc_ = json.loads((snap / "anchors.json").read_text(encoding="utf-8")) if (snap / "anchors.json").is_file() else []
+    except (OSError, ValueError, UnicodeDecodeError):
+        anc_ = []
+    anchors = [{"over": a_.get("over"), "method": a_.get("method"), "ref": a_.get("ref")} for a_ in (anc_ if isinstance(anc_, list) else []) if isinstance(a_, dict)]
+    return {"format": M.get("format"), "location": location, "subject": M.get("subject"), "profile": g_.get("profile"), "grading_kind": g_.get("kind"),
+            "taken_at": M.get("taken_at"), "counts": M.get("counts"), "score": M.get("score"), "auditor": auditor, "witnesses": witnesses,
+            "anchors": anchors, "links": M.get("links", []), "check": check_block}
+
+
+def export_statement(snap, M, check_block, location):
+    return {"_type": STATEMENT_TYPE, "subject": export_subjects(snap, M), "predicateType": PRED_TYPE, "predicate": export_predicate(snap, M, check_block, location)}
+
+
+def export_credential_subject(M, manifest_sha, check_block):
+    g_ = M.get("grading") if isinstance(M.get("grading"), dict) else {}
+    cb_ = check_block if isinstance(check_block, dict) else {}
+    return {"id": f"urn:sha256:{manifest_sha}", "type": "ClaimsSnapshotVersion", "format": M.get("format"), "documentSubject": M.get("subject"),
+            "profile": g_.get("profile"), "gradingKind": g_.get("kind"), "counts": M.get("counts"), "score": M.get("score"), "links": M.get("links", []),
+            "check": {"checkerSha256": cb_.get("checker_sha256"), "result": cb_.get("result")}}
+
+
+def export_related(snap, M, location):
+    """relatedResource: manifest.json, signatures.json and the auditor's part with their digestSRI (VC 2.0 section 5.3)."""
+    g_ = M.get("grading") if isinstance(M.get("grading"), dict) else {}
+    au_ = g_.get("auditor") if isinstance(g_.get("auditor"), dict) else {}
+    base_ = location.rstrip("/") if isinstance(location, str) and location else f"urn:sha256:{sha256(snap / 'manifest.json')}"
+    out = []
+    for n_ in ("manifest.json", "signatures.json", au_.get("file") or "audit.jsonl"):
+        if isinstance(n_, str) and (snap / n_).is_file():
+            r_ = {"id": f"{base_}/{n_}", "digestSRI": "sha256-" + base64.b64encode(hashlib.sha256((snap / n_).read_bytes()).digest()).decode("ascii")}
+            if n_.endswith(".json"):
+                r_["mediaType"] = "application/json"
+            out.append(r_)
+    return out
+
+
+def export_credential(snap, M, check_block, location, pub32, valid_from):
+    """The VC 2.0 credential without its proof (export.py adds the eddsa-jcs-2022 proof)."""
+    did_ = did_key(pub32)
+    vc = {"@context": list(VC_CONTEXT), "type": list(VC_TYPE), "issuer": did_, "validFrom": valid_from,
+          "credentialSubject": export_credential_subject(M, sha256(snap / "manifest.json"), check_block), "relatedResource": export_related(snap, M, location)}
+    if isinstance(location, str) and location:
+        vc["evidence"] = [{"id": location.rstrip("/") + "/CHECK.json", "type": ["ClaimsSnapshotCheck"]}]
+    return vc
+
+
+def eddsa_jcs_hash_data(unsecured, proof_options):
+    """eddsa-jcs-2022 hashData (vc-di-eddsa 3.3.4): sha256(JCS(proof configuration)) followed by sha256(JCS(the document))."""
+    return hashlib.sha256(jcs(proof_options).encode("utf-8")).digest() + hashlib.sha256(jcs(unsecured).encode("utf-8")).digest()
+
+
+def _b64any(s):
+    """Standard or URL-safe base64 (DSSE: a verifier MUST accept either), padding optional; None when it does not decode."""
+    if not isinstance(s, str):
+        return None
+    try:
+        s_ = s.replace("-", "+").replace("_", "/")
+        return base64.b64decode(s_ + "=" * (-len(s_) % 4), validate=True)
+    except (ValueError, TypeError):
+        return None
+
+
+def export_check(snap, M, d):
+    """KX (0.7, check.py --export DIR): the three export files against THIS version of the folder. The DSSE signature must verify, over
+    PAE, under the version's key (the key inside manifest.json.sig, else audit.jsonl.sig); the statement file is the signed payload; the
+    subjects are this version's files by sha256; the predicate equals the folder (format, subject, profile, grading kind, taken_at, counts,
+    score, auditor, witnesses, anchors, links); the credential's issuer is that key's did:key, its subject and relatedResource digests
+    equal the folder, and its eddsa-jcs-2022 proof verifies. Returns (status, text, details)."""
+    d = pathlib.Path(d)
+    bad, ok = [], []
+    for n_ in EXPORT_FILES:
+        if (d / n_).is_symlink() or not (d / n_).is_file():
+            bad.append(f"{n_}: missing from the export folder or not a regular file")
+    try:
+        if snap.resolve() == d.resolve() or snap.resolve() in d.resolve().parents:
+            bad.append("the export folder lies inside the snapshot folder: an export is written outside it")
+    except OSError:
+        pass
+    vk = version_key(snap)
+    raw = ssh_ed25519_raw(vk[0]) if vk else None
+    if vk is None:
+        bad.append("no readable manifest.json.sig or audit.jsonl.sig: no version key to verify the export against")
+    elif raw is None:
+        bad.append(f"the version's key ({vk[1]}) is not Ed25519: an export is signed with an Ed25519 key")
+    if bad:
+        return "FAIL", f"export: {len(bad)} problem(s)", bad
+    fp = sshsig_fingerprint(vk[0])
+    msha = sha256(snap / "manifest.json")
+    try:
+        env = json.loads((d / "statement.dsse.json").read_text(encoding="utf-8"))
+        vc = json.loads((d / "credential.vc.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        return "FAIL", "export: 1 problem(s)", [f"an export file is not JSON: {type(e).__name__}"]
+    if not isinstance(env, dict) or not isinstance(vc, dict):
+        return "FAIL", "export: 1 problem(s)", ["statement.dsse.json and credential.vc.json must each be a JSON object"]
+    # DSSE
+    pt = env.get("payloadType")
+    if pt != DSSE_PAYLOAD_TYPE:
+        bad.append(f"statement.dsse.json: payloadType {str(pt)[:60]!r} is not {DSSE_PAYLOAD_TYPE}")
+    payload = _b64any(env.get("payload"))
+    if payload is None:
+        bad.append("statement.dsse.json: payload is not base64")
+        payload = b""
+    if payload != (d / "statement.intoto.json").read_bytes():
+        bad.append("statement.intoto.json is not the signed payload of statement.dsse.json")
+    sigs_ = env.get("signatures") if isinstance(env.get("signatures"), list) else []
+    pae_ = dsse_pae(str(pt).encode("utf-8"), payload) if isinstance(pt, str) else None
+    if pae_ is not None and any(isinstance(s_, dict) and ed25519_verify(raw, pae_, _b64any(s_.get("sig")) or b"") for s_ in sigs_):
+        ok.append(f"statement.dsse.json: the DSSE signature verifies under the version's key {fp} (the key inside {vk[1]})")
+    else:
+        bad.append(f"statement.dsse.json: no signature verifies under the version's key {fp} (the key inside {vk[1]})")
+    # the statement, read from the signed bytes
+    try:
+        stmt = json.loads(payload.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        stmt = None
+    if not isinstance(stmt, dict):
+        bad.append("the signed payload is not a JSON object")
+        stmt = {}
+    if stmt and stmt.get("_type") != STATEMENT_TYPE:
+        bad.append(f"statement: _type {str(stmt.get('_type'))[:60]!r} is not {STATEMENT_TYPE}")
+    if stmt and stmt.get("predicateType") != PRED_TYPE:
+        bad.append(f"statement: predicateType {str(stmt.get('predicateType'))[:80]!r} is not {PRED_TYPE}")
+    want_s = {s_["name"]: s_["digest"]["sha256"] for s_ in export_subjects(snap, M)}
+    got_s = {}
+    for s_ in stmt.get("subject") if isinstance(stmt.get("subject"), list) else []:
+        if isinstance(s_, dict) and isinstance(s_.get("name"), str):
+            got_s[s_["name"]] = (s_.get("digest") or {}).get("sha256") if isinstance(s_.get("digest"), dict) else None
+    if stmt:
+        for n_, h_ in want_s.items():
+            if n_ not in got_s:
+                bad.append(f"subject {n_}: missing from the statement")
+            elif got_s[n_] != h_:
+                bad.append(f"subject {n_}: sha256 {str(got_s[n_])[:12]}… differs from the folder's {h_[:12]}…")
+        for n_ in got_s:
+            if n_ not in want_s:
+                bad.append(f"subject {n_}: not a file of this version")
+    pred = stmt.get("predicate") if isinstance(stmt.get("predicate"), dict) else {}
+    want_p = export_predicate(snap, M, None, None)
+    if stmt:
+        for k_ in want_p:
+            if k_ not in ("location", "check") and pred.get(k_) != want_p[k_]:
+                bad.append(f"predicate.{k_} differs from the folder")
+    cb = pred.get("check") if isinstance(pred.get("check"), dict) else {}
+    if stmt and not (cb.get("result") in ("PASS", "WARN") and isinstance(cb.get("checker_sha256"), str) and HEX64.fullmatch(cb["checker_sha256"]) and parse_time(cb.get("ran_at"))):
+        bad.append("predicate.check: result PASS or WARN, checker_sha256 64 hex and ran_at a time are required")
+    # the credential
+    did_ = did_key(raw)
+    if vc.get("@context") != VC_CONTEXT:
+        bad.append("credential: @context is not the VC 2.0 context and the undefined-terms context")
+    if not (isinstance(vc.get("type"), list) and all(t_ in vc["type"] for t_ in VC_TYPE)):
+        bad.append(f"credential: type does not hold {VC_TYPE}")
+    if vc.get("issuer") != did_:
+        bad.append(f"credential: issuer {str(vc.get('issuer'))[:40]!r}… is not the version key's did:key")
+    want_cs = export_credential_subject(M, msha, None)
+    cs = vc.get("credentialSubject") if isinstance(vc.get("credentialSubject"), dict) else {}
+    for k_ in want_cs:
+        if k_ != "check" and cs.get(k_) != want_cs[k_]:
+            bad.append(f"credentialSubject.{k_} differs from the folder")
+    if cs.get("check") != {"checkerSha256": cb.get("checker_sha256"), "result": cb.get("result")}:
+        bad.append("credentialSubject.check differs from the statement's check")
+    rr = vc.get("relatedResource") if isinstance(vc.get("relatedResource"), list) else []
+    for w_ in export_related(snap, M, None):
+        n_ = w_["id"].rsplit("/", 1)[1]
+        got_ = next((r_ for r_ in rr if isinstance(r_, dict) and isinstance(r_.get("id"), str) and r_["id"].endswith("/" + n_)), None)
+        if got_ is None:
+            bad.append(f"relatedResource {n_}: missing")
+        elif got_.get("digestSRI") != w_["digestSRI"]:
+            bad.append(f"relatedResource {n_}: digestSRI differs from the folder's file")
+    proof = vc.get("proof") if isinstance(vc.get("proof"), dict) else {}
+    opts = {k_: v_ for k_, v_ in proof.items() if k_ != "proofValue"}
+    pv = proof.get("proofValue")
+    sig_ = b58decode(pv[1:]) if isinstance(pv, str) and pv.startswith("z") else None
+    vm_ok = proof.get("verificationMethod") == did_ + "#" + did_[len("did:key:"):]
+    ctx_ok = isinstance(opts.get("@context"), list) and vc.get("@context", [])[:len(opts["@context"])] == opts["@context"] if "@context" in opts else True
+    try:
+        unsecured = {k_: v_ for k_, v_ in vc.items() if k_ != "proof"}
+        if "@context" in opts:
+            unsecured["@context"] = opts["@context"]
+        hd = eddsa_jcs_hash_data(unsecured, opts)
+    except ValueError:
+        hd = None
+    if not (proof.get("type") == "DataIntegrityProof" and proof.get("cryptosuite") == "eddsa-jcs-2022" and proof.get("proofPurpose") == "assertionMethod"
+            and vm_ok and ctx_ok and hd is not None and sig_ is not None and ed25519_verify(raw, hd, sig_)):
+        bad.append("credential.vc.json: the credential's proof does not verify (DataIntegrityProof, eddsa-jcs-2022, assertionMethod, the version key's did:key)")
+    else:
+        ok.append(f"credential.vc.json: the eddsa-jcs-2022 proof verifies under {did_[:24]}…, the version key's did:key")
+    if bad:
+        return "FAIL", f"export: {len(bad)} problem(s) against this version (manifest sha256:{msha[:12]}…)", bad + ok
+    return "PASS", f"export: the DSSE envelope, the statement and the credential hold for this version (manifest sha256:{msha[:12]}…)", ok
+
+
 def merge_rows(audit, wrows, witness_name):
     """claims.jsonl from the auditor's rows and one witness's decisions (SPEC.md 4b). MISSING CLAIM rows are not merged.
     A claim the witness did not decide gets verdict None, which K3 then rejects."""
@@ -1942,6 +2336,14 @@ def _main(argv, R):
     # K16 links (0.7, 14 Nov 2026, SPEC 3 and 5): only for a 0.7 or later folder, so every older folder's output is unchanged
     if fmt_at_least(M, "0.7"):
         R.add("K16", *links_check(snap, M, links_root))
+
+    # KX exports (0.7, SPEC 15): only when --export DIR is given, so a run without it is unchanged; any format (an export is outside the folder)
+    if "--export" in argv:
+        i_ = argv.index("--export")
+        if i_ + 1 < len(argv) and not argv[i_ + 1].startswith("--"):
+            R.add("KX", *export_check(snap, M, pathlib.Path(argv[i_ + 1])))
+        else:
+            R.add("KX", "FAIL", "--export needs the export folder (statement.intoto.json, statement.dsse.json, credential.vc.json)")
 
     # K10 live fetch: every source a proof or counter uses, by file or by url; status proofs compared live;
     # audited pages with a url re-fetched and every claim fragment looked for again
