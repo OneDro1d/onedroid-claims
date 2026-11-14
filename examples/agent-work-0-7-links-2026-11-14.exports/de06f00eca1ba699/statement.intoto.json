@@ -1,0 +1,116 @@
+{
+ "_type": "https://in-toto.io/Statement/v1",
+ "subject": [
+  {
+   "name": "manifest.json",
+   "digest": {
+    "sha256": "de06f00eca1ba699f28cf84466cf610d9e8b1ab4616f597453474f07aa42b618"
+   }
+  },
+  {
+   "name": "signatures.json",
+   "digest": {
+    "sha256": "cf00bd272d21a496ebeb45038d815621bdcfc697c2d22c707c480d9d48cadd5b"
+   }
+  },
+  {
+   "name": "audit.jsonl",
+   "digest": {
+    "sha256": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e"
+   }
+  },
+  {
+   "name": "claims.jsonl",
+   "digest": {
+    "sha256": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75"
+   }
+  },
+  {
+   "name": "page.txt",
+   "digest": {
+    "sha256": "392b82a2cf265646b4bca04f491bcf3824512af71e436b9a4e8ed935c43a531b"
+   }
+  }
+ ],
+ "predicateType": "https://github.com/OneDro1d/onedroid-claims/blob/main/SPEC.md#claims-snapshot-v0.7",
+ "predicate": {
+  "format": "claims-snapshot/0.7",
+  "location": "https://github.com/OneDro1d/onedroid-claims/tree/main/examples/agent-work-0-7-links-2026-11-14",
+  "subject": {
+   "parts": [],
+   "publisher": "dev@example.com",
+   "session_id": "aaaaaaaa-1111-2222-3333-444444444444",
+   "title": "Claims of agent session aaaaaaaa-1111-2222-3333-444444444444 at turn end #2",
+   "turn_end": 2,
+   "url": null
+  },
+  "profile": "agent-work",
+  "grading_kind": "split",
+  "taken_at": "2026-11-12T01:43:55Z",
+  "counts": {
+   "author_read": 0,
+   "checkable": 3,
+   "claims": 3,
+   "contradicted": 1,
+   "contradicted_high": 1,
+   "evidenced": 1,
+   "no_evidence": 1,
+   "on_request": 0,
+   "withdrawn": 0
+  },
+  "score": {
+   "band": "D",
+   "contradiction_pct": 33,
+   "coverage_pct": 33,
+   "formula": "evidence-score/1"
+  },
+  "auditor": {
+   "principal": "fixture-auditor",
+   "key_fingerprint": "SHA256:1Ji+LF2GGrKKIm9UI974mcqrzszIeM9WSW0eA1tfWLw"
+  },
+  "witnesses": [
+   {
+    "name": "alice",
+    "kind": "human",
+    "primary": true,
+    "key_fingerprint": "SHA256:ANKNe53d9N5xO59rhpH5fM1gSigZeY9zSmsnCVNUfAY",
+    "score": {
+     "band": "D",
+     "contradiction_pct": 33,
+     "coverage_pct": 33
+    }
+   }
+  ],
+  "anchors": [
+   {
+    "over": "sha256:cf00bd272d21a496ebeb45038d815621bdcfc697c2d22c707c480d9d48cadd5b",
+    "method": "armarium",
+    "ref": {
+     "chain": "example-chain",
+     "correlation_id": "0123456789abcdef0123456789abcdef",
+     "block": 1,
+     "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+     "signer": "0x000000000000000000000000000000000000dEaD"
+    }
+   }
+  ],
+  "links": [
+   {
+    "rel": "wasDerivedFrom",
+    "target": {
+     "manifest_sha256": "0f934fdad319089ae0c6f307dc2b3ac5e9b6230f152c92d04be2be4b74c98c13",
+     "signatures_sha256": "17371f4abc7eab27e383bd2197737b6e2da6c9394680c3d651018db76312fbfc",
+     "path": "../agent-work-s-i10-2026-11-12",
+     "location": "https://github.com/OneDro1d/onedroid-claims/tree/4be17f16d8ff6b3bc636f5bb6b1b3e5163b9b236/examples/agent-work-s-i10-2026-11-12",
+     "anchor": null
+    },
+    "note": "this folder is that 0.5 example relabelled claims-snapshot/0.7 and re-signed with throwaway keys"
+   }
+  ],
+  "check": {
+   "checker_sha256": "9bf4ddbadef8c7b1b62fb3962293e38de84a33e598846b94ec31b37ff32eca9b",
+   "result": "PASS",
+   "ran_at": "2026-11-14T22:51:40Z"
+  }
+ }
+}

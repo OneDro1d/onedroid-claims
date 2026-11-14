@@ -1,0 +1,3 @@
+hello.txt holds hi
+the tests pass
+bye.txt holds bye

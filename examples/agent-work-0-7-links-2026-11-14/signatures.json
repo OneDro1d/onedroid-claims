@@ -1,0 +1,44 @@
+[
+ {
+  "role": "auditor",
+  "file": "audit.jsonl",
+  "sha256": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "signer": {
+   "name": "fixture-auditor",
+   "key_id": "SHA256:1Ji+LF2GGrKKIm9UI974mcqrzszIeM9WSW0eA1tfWLw",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-14T22:51:40Z",
+  "signature": "audit.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/alice.jsonl",
+  "sha256": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
+  "line": "claims-snapshot/0.4 witness witness/alice.jsonl sha256:dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff over audit.jsonl sha256:15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
+  "signer": {
+   "name": "fixture-witness",
+   "key_id": "SHA256:ANKNe53d9N5xO59rhpH5fM1gSigZeY9zSmsnCVNUfAY",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-14T22:51:40Z",
+  "signature": "witness/alice.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "sources",
+  "file": "manifest.json",
+  "sha256": "95e8cc3284f96e84b69881c37882e8ecca1ab389794e3248991bc4b34798aeb4",
+  "line": "claims-snapshot/0.4 sources manifest.json sha256:95e8cc3284f96e84b69881c37882e8ecca1ab389794e3248991bc4b34798aeb4",
+  "signer": {
+   "name": "fixture-auditor",
+   "key_id": "SHA256:1Ji+LF2GGrKKIm9UI974mcqrzszIeM9WSW0eA1tfWLw",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-14T22:51:40Z",
+  "signature": "manifest.sources.sig",
+  "commit": null
+ }
+]
