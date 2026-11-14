@@ -46,7 +46,7 @@
    "name": "agent",
    "note": "the agent that did the work wrote this block at its turn end; signed by the machine's enrolled key, the human named stands behind it",
    "sha256": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
-   "signer": "fixture-auditor <SHA256:Y3MBjyfM3mWBuItgUQH1Bwu3iW3UIPIIxcpooZdeBs4>"
+   "signer": "fixture-auditor <SHA256:1Ji+LF2GGrKKIm9UI974mcqrzszIeM9WSW0eA1tfWLw>"
   },
   "gates": [],
   "graded_at": "2026-11-12T01:43:55.065583165Z",
@@ -84,7 +84,7 @@
      "coverage_pct": 33
     },
     "sha256": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
-    "signer": "fixture-witness <SHA256:iH1zJgTZcMgnbN61fdAXZO8LnpNLYeO7R1Yw7VSkraQ>"
+    "signer": "fixture-witness <SHA256:ANKNe53d9N5xO59rhpH5fM1gSigZeY9zSmsnCVNUfAY>"
    }
   ]
  },
@@ -108,13 +108,13 @@
  "claims_sha256": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
  "files": {
   "audit.jsonl": "15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e",
-  "audit.jsonl.sig": "251124e20c5415f4f58227799c516cdd705aaaf55c24b4483e60b204df2ca74e",
+  "audit.jsonl.sig": "86280a67b078d5cec75b5bac262d0c015205801a743305272eb8136b4a751d64",
   "claims.jsonl": "d800178135d6560164696b3a285d0c4e8adefa286cb60c39340393b1aef41d75",
   "page.txt": "392b82a2cf265646b4bca04f491bcf3824512af71e436b9a4e8ed935c43a531b",
   "sources/files/bye.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
   "sources/files/hello.txt": "98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4",
   "witness/alice.jsonl": "dfefcbbe692f6d60fe48054882354e508a0700cfe2be124cd24c7e2d1db997ff",
-  "witness/alice.jsonl.sig": "c4dda97040ce4cd374a890855afdb0287f171f02a89a064e10c08adee1ae21c1"
+  "witness/alice.jsonl.sig": "79c1435da52431053e75986655f7165c8f3a7df6d05cc9feac8af71565e84742"
  },
  "bundled_with": "onedroid-indie 0.1.0-dev (unknown)",
  "links": [

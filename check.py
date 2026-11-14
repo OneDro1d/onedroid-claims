@@ -479,12 +479,17 @@ def links_check(snap, M, root):
                 bad.append(f"{p_}: the target's signatures.json sha256 {str(got)[:12]}… is not the link's {s_[:12]}…")
         if t_.get("anchor") is not None:
             ap = os.path.join(found, "anchors.json")
-            try:  # like signatures.json and the link path: a symbolic link is never followed (gate H2, 14 Nov 2026)
-                ta = None if os.path.islink(ap) else json.loads(pathlib.Path(ap).read_text(encoding="utf-8"))
-            except (OSError, ValueError, UnicodeDecodeError):
-                ta = None
-            if not (isinstance(ta, list) and any(isinstance(a_, dict) and a_.get("ref") == t_["anchor"] for a_ in ta)):
-                bad.append(f"{p_}: the target's anchors.json has no entry whose ref is the link's anchor")
+            # like signatures.json and the link path: a symbolic link is never followed, wherever it points, inside the target or
+            # out (gate H2, then gate-h2 F2, 14 Nov 2026)
+            if os.path.islink(ap):
+                bad.append(f"{p_}: the target's anchors.json is a symbolic link, not followed: the checker follows none")
+            else:
+                try:
+                    ta = json.loads(pathlib.Path(ap).read_text(encoding="utf-8"))
+                except (OSError, ValueError, UnicodeDecodeError):
+                    ta = None
+                if not (isinstance(ta, list) and any(isinstance(a_, dict) and a_.get("ref") == t_["anchor"] for a_ in ta)):
+                    bad.append(f"{p_}: the target's anchors.json has no entry whose ref is the link's anchor")
         if rel in ("supersedes", "reaudits") and isinstance(TM, dict):
             kf, kv = subject_key(M)
             tf, tv = subject_key(TM)
@@ -2276,7 +2281,11 @@ def _main(argv, R):
         # K14 anchors: each over the hash of a file in the folder
         anc_p = snap / "anchors.json"
         bad, warn, info, g_info = [], [], [], []  # g_info: 0.7 gvui lines, printed after the bindings and not counted as one
-        if not anc_p.exists():
+        if fmt_at_least(M, "0.7") and anc_p.is_symlink():
+            # gate-h2 F1 (14 Nov 2026): this folder's own anchors.json, as K16 treats a target's: a symbolic link is never followed.
+            # 0.7 and later only, so every older folder's output is unchanged
+            bad.append("anchors.json is a symbolic link, not followed: the checker follows none")
+        elif not anc_p.exists():
             warn.append("no anchors.json: nothing fixes the signatures in time" + ("; no anchor exists yet (test-run: an anchor over the signatures file is optional until armarium ships)" if profile == "test-run" else ""))
         else:
             try:
