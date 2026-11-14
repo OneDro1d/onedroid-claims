@@ -146,6 +146,24 @@ def main():
         f.case("g6h", lambda: k14("g6h_06_ref_without_signer_unchanged", F6, {"ref": ref}, "PASS", "binding holds"))
         f.case("g6i", lambda: k14("g6i_06_malformed_signer_not_read", F6, {"ref": dict(ref, signer="0xZZ")}, "PASS", "binding holds"))
 
+        # G6j/G6k (gate-h2 F1, 14 Nov 2026): the checked folder's OWN anchors.json as a symbolic link, here to a valid file inside the
+        # folder. 0.7: never followed, K14 FAIL (the K16 rule, DESIGN 1.3). 0.6: unchanged, the link is read as before.
+        def own_link(name, d, want, needle):
+            k14(name + "-setup", d, {"ref": ref}, "PASS" if d is F6 else "WARN", None)
+            real = d / "anchors-real.json"
+            (d / "anchors.json").rename(real)
+            (d / "anchors.json").symlink_to("anchors-real.json")
+            try:
+                r = f.Run(d)
+                ok = r.status.get("K14") == want and (needle is None or r.has("K14", needle)) and not r.traceback
+                f.report(name, ok, f"K14 {want}" + (f" with {needle!r}" if needle else ""), f"K14 {r.status.get('K14')}", r.text.get("K14", "").splitlines()[:4])
+            finally:
+                (d / "anchors.json").unlink()
+                real.rename(d / "anchors.json")
+
+        f.case("g6j", lambda: own_link("g6j_07_own_anchors_symlink_fails", F7, "FAIL", "anchors.json is a symbolic link, not followed"))
+        f.case("g6k", lambda: own_link("g6k_06_own_anchors_symlink_unchanged", F6, "PASS", "binding holds"))
+
     return f.finish("test07_anchors")
 
 

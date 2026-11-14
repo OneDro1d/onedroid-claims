@@ -127,9 +127,17 @@ def main():
             outside.write_text((T / "anchors.json").read_text(encoding="utf-8"), encoding="utf-8")
             (T / "anchors.json").unlink()
             (T / "anchors.json").symlink_to(outside)
-            k16("l6d_anchor_file_is_a_symlink", [link(anchor=ref)], "FAIL", "anchors.json has no entry whose ref", want_rc=1)
+            k16("l6d_anchor_file_is_a_symlink", [link(anchor=ref)], "FAIL", "the target's anchors.json is a symbolic link, not followed", want_rc=1)
             (T / "anchors.json").unlink()
             outside.unlink()
+            # gate-h2 F2 (14 Nov 2026): a link to a file INSIDE the target holding the right entry is refused too (it kills the
+            # follow-then-contain mutant, which l6d's outside file cannot)
+            (T / "anchors-real.json").write_text(json.dumps([{"over": "sha256:" + f.sha(T / "signatures.json"), "method": "armarium", "ref": ref,
+                                                               "time": "2026-11-12T02:00:00Z", "proof_file": None}], indent=1) + "\n", encoding="utf-8")
+            (T / "anchors.json").symlink_to("anchors-real.json")
+            k16("l6e_anchor_file_links_inside_target", [link(anchor=ref)], "FAIL", "the target's anchors.json is a symbolic link, not followed", want_rc=1)
+            (T / "anchors.json").unlink()
+            (T / "anchors-real.json").unlink()
             (T / "anchors.json").write_text("[]\n", encoding="utf-8")
         f.case("l6_anchor", l6)
 
