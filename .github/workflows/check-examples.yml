@@ -9,12 +9,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the adopted one (claims-snapshot 0.6 with the twelfth cut of 13 Nov 2026, V2b, V2c, V2d, V2f, V2g, V2h and V2i)
+      - name: the checker is the 0.7 draft (claims-snapshot 0.7 of 14 Nov 2026 on the twelfth cut; the 0.6 checker was 8212c636)
         run: |
-          echo "8212c636a5538978786b3d3f09f391123ab4f952870c704b41374e7ec7ec088c  check.py" > checker.sha256
+          echo "e98479f650d1746338f6db78ba3107d1db63a7af695662955f132ea097182a16  check.py" > checker.sha256
           sha256sum -c checker.sha256
-      - name: the checker reads every format up to 0.6 (imported from the checked-out tree, so no -I here)
-        run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
+      - name: the checker reads every format up to 0.7 (imported from the checked-out tree, so no -I here)
+        run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.7' in check.FORMATS and 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
+      - name: the 0.7 example (links, an anchor ref with a signer and a gvui, and its export verified by --export)
+        run: python3 -I check.py examples/agent-work-0-7-links-2026-11-14 --export examples/agent-work-0-7-links-2026-11-14.exports/7e86176facec76c8
+      - name: the 0.7 compatibility suite (C3, every 0.6 rule on 0.7; the C1 survey needs the previous checker, not here)
+        run: python3 -I test07_compat.py --committed none
+      - name: the 0.7 links suite (L1 to L10, K16 and the six-section sources digest)
+        run: python3 -I test07_links.py
+      - name: the 0.7 anchor suite (G5 and G6, package.py keeps the signer, K14 reads signer and gvui)
+        run: python3 -I test07_anchors.py
+      - name: the 0.7 export suite (X1 to X4, X6, X7, X8; export.py needs the cryptography package, check.py does not)
+        run: |
+          python3 -m venv /tmp/export-venv
+          /tmp/export-venv/bin/pip install --quiet cryptography==46.0.5
+          /tmp/export-venv/bin/python -I test07_export.py
       - name: agent-work example
         run: python3 -I check.py examples/agent-work-s-i10-2026-11-12
       - name: test-run example
@@ -49,3 +62,5 @@ jobs:
         run: python3 -I check.py examples/witness-service-tr4-2026-11-13
       - name: the key list parses (empty until the witness service mints keys)
         run: python3 -c "import json; [json.loads(l) for l in open('keys/model-keys.jsonl') if l.strip()]; print('key list ok')"
+      - name: the anchor signer list parses (0.7, empty until the first anchor grant is listed)
+        run: python3 -c "import json; [json.loads(l) for l in open('keys/anchor-signers.jsonl') if l.strip()]; print('anchor signer list ok')"

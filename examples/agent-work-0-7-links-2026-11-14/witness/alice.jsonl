@@ -1,0 +1,4 @@
+{"witness":"alice","model":"human","method":"the kit showed each claim with its evidence pointers (file lines from /tmp/TestBundleRoundTrip2623656254/002, the session record's rows); the witness decided","over":{"file":"audit.jsonl","sha256":"15406c200559e1f9832ea771f7d300aaa0bc562da6792392d96373f916db3a7e"},"started_at":"2026-11-12T01:43:55.065519324Z","finished_at":"2026-11-12T01:43:55.065583165Z"}
+{"id":"C-001","verdict":"EVIDENCED","confidence":"high","on":{"proofs":[0],"counter":[]},"note":"hello.txt says hi","graded_at":"2026-11-12T01:43:55.065572841Z"}
+{"id":"C-002","verdict":"NO EVIDENCE PUBLISHED","confidence":"high","on":{"proofs":[],"counter":[]},"note":"not re-run","graded_at":"2026-11-12T01:43:55.06557647Z"}
+{"id":"C-003","verdict":"CONTRADICTED","confidence":"high","on":{"proofs":[],"counter":[0]},"note":"bye.txt says hello","graded_at":"2026-11-12T01:43:55.065579704Z"}

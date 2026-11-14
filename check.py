@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check.py: the mechanical checker for a claims snapshot (SPEC.md section 5). Standard library only, no model.
 
-usage: python3 -I check.py SNAPSHOT_DIR [--copies DIR] [--fetch] [--strict] [--json] [--keys FILE]
+usage: python3 -I check.py SNAPSHOT_DIR [--copies DIR] [--fetch] [--strict] [--json] [--keys FILE] [--links ROOT] [--export DIR]
   --copies DIR  a private folder holding NNN.txt (or NNN.pdf-text.txt) copies of hash-only sources, to verify quotes offline
   --fetch       fetch every source live (GET, browser user-agent) and check the quotes are still there (K10)
   --strict      a quote gone from a live page fails K10 instead of warning
@@ -9,6 +9,10 @@ usage: python3 -I check.py SNAPSHOT_DIR [--copies DIR] [--fetch] [--strict] [--j
   --keys FILE   0.6: the published key list (keys/model-keys.jsonl of the public repository) a model witness's principal is
                 checked against; a broken binding FAILs. Without it the snapshot's own keys/model-keys.jsonl is used (a broken
                 binding there is a WARN), and without either the checker warns.
+  --links ROOT  0.7: a local directory (a clone or mirror of the publisher's repository) under which K16 looks up link targets by the
+                sha256 of their manifest.json; without it only a link's relative `path` is followed. Offline, never the network.
+  --export DIR  0.7: verify an export of this version (statement.intoto.json, statement.dsse.json, credential.vc.json, written by
+                export.py outside the folder) against the folder: the KX line. Any format; without the flag nothing changes.
 Prints one line per check (PASS / WARN / FAIL) with details, then a summary; exit 0 when nothing failed.
 A 0.4 snapshot (audit.jsonl + witness/) gets K11 to K15 as well; K13 verifies SSH signatures when ssh-keygen is on PATH.
 0.5 adds the agent-work profile (an agent's claims about its own work, OneDroid Indie's bundle; SPEC.md section 12):
@@ -19,7 +23,11 @@ K13 fails a witness signed with the auditor's key.
 undecided rows, split lines across model witnesses, the key list, the manifest signature role (SPEC.md section 14).
 0.6 (12 Nov 2026) also names the pre-witness stage: grading.kind "pre-witness" is the auditor's part published alone (no claims.jsonl,
 no score, no claims_sha256, no grader or model; witnesses may be listed, none primary); K1 reads the declaration, K5 tests the
-auditor's pointers and candidate quotes without a verdict, K8 and K12 WARN that no score exists yet, K11 asks for no primary."""
+auditor's pointers and candidate quotes without a verdict, K8 and K12 WARN that no score exists yet, K11 asks for no primary.
+0.7 (14 Nov 2026, SPEC 15): every rule keyed on 0.6 reads "0.6 or later" (fmt_at_least), so a 0.7 folder inherits them all; the manifest
+field `links` and K16; the auditor's `sources` signature over six sections (links too); K14 reads an armarium ref's `signer` and a
+`gvui`; --export verifies the in-toto/DSSE and VC 2.0 exports with a standard-library Ed25519. A 0.6 or older folder never reaches a 0.7
+rule, so its output is byte-identical to the 0.6 checker's."""
 import traceback
 import base64, datetime, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
 
