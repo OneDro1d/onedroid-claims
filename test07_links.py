@@ -121,6 +121,15 @@ def main():
                                                           "time": "2026-11-12T02:00:00Z", "proof_file": None}], indent=1) + "\n", encoding="utf-8")
             k16("l6b_anchor_not_in_target", [link(anchor=dict(ref, block=4243))], "FAIL", "anchors.json has no entry whose ref", want_rc=1)
             k16("l6c_anchor_in_target_passes", [link(anchor=ref)], "PASS", "resolved", want_rc=0)
+            # gate H2 (14 Nov 2026): an anchors.json that is a symbolic link, even to a file holding the right entry, is not
+            # read (the same rule as signatures.json and the link path, DESIGN 1.3)
+            outside = T.parent.parent / "outside-anchors.json"
+            outside.write_text((T / "anchors.json").read_text(encoding="utf-8"), encoding="utf-8")
+            (T / "anchors.json").unlink()
+            (T / "anchors.json").symlink_to(outside)
+            k16("l6d_anchor_file_is_a_symlink", [link(anchor=ref)], "FAIL", "anchors.json has no entry whose ref", want_rc=1)
+            (T / "anchors.json").unlink()
+            outside.unlink()
             (T / "anchors.json").write_text("[]\n", encoding="utf-8")
         f.case("l6_anchor", l6)
 
