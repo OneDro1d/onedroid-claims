@@ -134,6 +134,8 @@ def main():
         f.case("g6b", lambda: k14("g6b_07_malformed_signer_fails", F7, {"ref": dict(ref, signer="0xZZ")}, "FAIL", "is not 0x and 40 hex"))
         f.case("g6c", lambda: k14("g6c_07_signer_and_gvui_pass", F7, {"ref": dict(ref, signer=SIGNER), "gvui": gv1("argus-dev-poa", 4242, "c" * 32, SIGNER, T)},
                                   "PASS", "gvui recomputes from the ref"))
+        f.case("g6c2", lambda: k14("g6c2_07_gvui_line_is_not_a_binding", F7, {"ref": dict(ref, signer=SIGNER), "gvui": gv1("argus-dev-poa", 4242, "c" * 32, SIGNER, T)},
+                                   "PASS", "K14 PASS: 1 anchor binding(s) hold"))
         f.case("g6d", lambda: k14("g6d_07_gvui_not_recomputing_fails", F7, {"ref": dict(ref, signer=SIGNER), "gvui": gv1("argus-dev-poa", 4242, "d" * 32, SIGNER, T)},
                                   "FAIL", "gvui does not recompute"))
         f.case("g6e", lambda: k14("g6e_07_gvui_other_signer_fails", F7, {"ref": dict(ref, signer=SIGNER), "gvui": gv1("argus-dev-poa", 4242, "c" * 32, "0x" + "22" * 20, T)},
