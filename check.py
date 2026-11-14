@@ -306,6 +306,24 @@ def sources_digest(M):
 
 
 LINK_RELS = ("supersedes", "reaudits", "wasDerivedFrom", "partOf")
+SIGNER_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+GVUI_NS = "claims-snapshot"
+
+
+def gvui_of(a):
+    """The gv1 string an anchors.json entry's `gvui` must equal (0.7, SPEC 3a), else None when the entry lacks what it needs: "gv1", then
+    the unpadded standard base32 of the namespace "claims-snapshot", of "anchor/<chain>/<block>", of the correlation id and of the
+    signer, then the anchor time as Unix seconds, joined by ":" (gvuid 7311ea9, gvuid.go:30-33 and :73-82)."""
+    ref_ = a.get("ref") if isinstance(a, dict) else None
+    if not (isinstance(ref_, dict) and a.get("method") == "armarium"):
+        return None
+    chain_, blk_, corr_, sg_ = ref_.get("chain"), ref_.get("block"), ref_.get("correlation_id"), ref_.get("signer")
+    t_ = parse_time(a.get("time"))
+    if not (isinstance(chain_, str) and isinstance(blk_, int) and not isinstance(blk_, bool) and isinstance(corr_, str) and isinstance(sg_, str) and t_):
+        return None
+    b32 = lambda s: base64.b32encode(s.encode("utf-8")).decode("ascii").rstrip("=")  # noqa: E731
+    secs = int((t_ - datetime.datetime(1970, 1, 1)).total_seconds())
+    return ":".join(["gv1", b32(GVUI_NS), b32(f"anchor/{chain_}/{blk_}"), b32(corr_), b32(sg_), str(secs)])
 
 
 def subject_key(M):
@@ -1871,6 +1889,25 @@ def _main(argv, R):
                     continue
                 if a.get("method") not in ANCHOR_METHODS:
                     bad.append(f"anchors[{i}]: method {a.get('method')!r} unknown")
+                if fmt_at_least(M, "0.7"):
+                    # 0.7 (14 Nov 2026, SPEC 3a): an armarium ref keeps the signer the service recovered from the transaction; a `gvui`, when
+                    # present, is derived from the anchor and recomputed here (no second chain write). Older folders print nothing new.
+                    ref_ = a.get("ref")
+                    if a.get("method") == "armarium":
+                        sg_ = ref_.get("signer") if isinstance(ref_, dict) else None
+                        if not isinstance(ref_, dict):
+                            bad.append(f"anchors[{i}]: an armarium ref is a JSON {json_kind(ref_)}, not an object")
+                        elif sg_ is None:
+                            warn.append(f"anchors[{i}]: the armarium ref names no signer: who wrote the anchor is not on record (0.7 keeps the signer the service recovered)")
+                        elif not (isinstance(sg_, str) and SIGNER_RE.fullmatch(sg_)):
+                            bad.append(f"anchors[{i}]: the armarium ref's signer {str(sg_)[:60]!r} is not 0x and 40 hex")
+                    if a.get("gvui") is not None:
+                        want_g = gvui_of(a)
+                        if want_g is None or a.get("gvui") != want_g:
+                            bad.append(f"anchors[{i}]: gvui does not recompute from the ref (gv1 of namespace {GVUI_NS}, anchor/<chain>/<block>, the correlation id, the signer and the anchor time)"
+                                       + ("" if want_g is not None else ": the ref lacks a field it needs"))
+                        else:
+                            info.append(f"anchors[{i}]: gvui recomputes from the ref ({want_g[:24]}…)")
                 pf = a.get("proof_file")
                 if pf and not (snap / pf).exists():
                     bad.append(f"anchors[{i}]: proof_file {pf!r} missing")

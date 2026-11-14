@@ -29,7 +29,9 @@ The packager gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d/
 - A landed answer whose ref is not the anchor surface's shape (the asked chain, a block number, a 0x transaction hash, a hex
   correlation id), or a 200 whose body is not one JSON object, is exit 1 with the key named (the service holds the result under
   it). Only those four ref fields and a block_time of the form YYYY-MM-DDTHH:MM:SSZ reach anchors.json, so nothing else the
-  service sent is recorded or printed.
+  service sent is recorded or printed. 0.7 (14 Nov 2026): on a claims-snapshot/0.7 or later folder the answer's `signer` (the key the
+  service recovered from the transaction) is kept as a fifth ref field when it is 0x and 40 hex and echoes no part of the token; a
+  malformed one is exit 1 with nothing recorded; no signer, none recorded. A 0.6 or older folder keeps exactly the four fields.
 - --anchor-retries is a whole number of at least 0, --anchor-wait a finite number of seconds of at least 0.
 
 The packager re-gate (the claims session, 13 Nov 2026, gate/2026-11-13-packager-1d-regate/RESULT.md) added these:
@@ -84,6 +86,8 @@ CHAIN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")  # armarium pkg/armariu
 CORR_RE = re.compile(r"[0-9a-f]{32}")  # armarium cmd/armarium-service/anchor_routes.go:25
 TX_RE = re.compile(r"0x[0-9a-fA-F]{64}")
 TIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+SIGNER_RE = re.compile(r"0x[0-9a-fA-F]{40}")  # 0.7: the recovered signer, as check.SIGNER_RE
+FORMAT_RE = re.compile(r"claims-snapshot/0\.([0-9]{1,3})")  # as check.FORMAT_RE; 0.7 and later keep the signer
 
 
 ECHO_RUN = 8
@@ -239,6 +243,8 @@ def anchor(out, url, chain, token, retries, wait, tls=None):
         payload["format"] = json.loads((out / "manifest.json").read_text(encoding="utf-8")).get("format")
     except (ValueError, AttributeError):
         pass
+    fm = FORMAT_RE.fullmatch(payload["format"]) if isinstance(payload.get("format"), str) else None
+    fmt07 = fm is not None and int(fm.group(1)) >= 7
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     if len(raw) > 2048:
         print(f"not anchored: the anchor payload is {len(raw)} bytes, the service takes at most 2048", file=sys.stderr)
@@ -276,6 +282,16 @@ def anchor(out, url, chain, token, retries, wait, tls=None):
                 return 1, None
             # only the four fields of the anchor surface are kept: nothing else the service sent reaches the record
             ref = {k_: ref[k_] for k_ in ("chain", "correlation_id", "block", "tx_hash")}
+            # 0.7 (14 Nov 2026, SPEC 3a): the signer the service RECOVERED from the transaction (the answer's top-level `signer`) is kept
+            # as a fifth ref field, 0x and 40 hex; a malformed one, or one that echoes the token, is refused with nothing recorded. A 0.6 or
+            # older folder keeps exactly the four fields above. No signer in the answer: none recorded (K14 WARNs on 0.7).
+            if fmt07 and ans.get("signer") is not None:
+                sg = ans.get("signer")
+                if not (isinstance(sg, str) and SIGNER_RE.fullmatch(sg)) or echoes(sg, token):
+                    print(f"not anchored: the service answered landed, but its signer is not 0x and 40 hex characters (or echoes the token); nothing "
+                          f"recorded. The service holds the result under key {key}: repeat the same request with that key", file=sys.stderr)
+                    return 1, None
+                ref["signer"] = sg
             bt = ans.get("block_time")
             bt = bt if real_time(bt) and not echoes(bt, token) else None
             return 0, {"over": f"sha256:{sig_h}", "method": "armarium", "ref": ref, "time": bt, "proof_file": None}
