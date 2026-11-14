@@ -163,6 +163,22 @@ def main():
 
         f.case("g6j", lambda: own_link("g6j_07_own_anchors_symlink_fails", F7, "FAIL", "anchors.json is a symbolic link, not followed"))
         f.case("g6k", lambda: own_link("g6k_06_own_anchors_symlink_unchanged", F6, "PASS", "binding holds"))
+        # gate-f1f2 O2 (14 Nov 2026): nothing behind the link is read, so no binding is counted (kills the check-after-read mutant M6)
+        f.case("g6j2", lambda: own_link("g6j2_07_own_anchors_symlink_reads_nothing", F7, "FAIL", "K14 FAIL: 0 anchor binding(s) hold"))
+
+        # gate-f1f2 M8: a DANGLING own anchors.json link on 0.7 is the same FAIL, never the "no anchors.json" WARN
+        def g6l():
+            (F7 / "anchors.json").rename(F7 / "anchors-kept.json")
+            (F7 / "anchors.json").symlink_to("no-such-file.json")
+            try:
+                r = f.Run(F7)
+                ok = r.status.get("K14") == "FAIL" and r.has("K14", "anchors.json is a symbolic link, not followed") and not r.traceback
+                f.report("g6l_07_own_anchors_dangling_symlink_fails", ok, "K14 FAIL 'anchors.json is a symbolic link, not followed'",
+                         f"K14 {r.status.get('K14')}", r.text.get("K14", "").splitlines()[:3])
+            finally:
+                (F7 / "anchors.json").unlink()
+                (F7 / "anchors-kept.json").rename(F7 / "anchors.json")
+        f.case("g6l", g6l)
 
     return f.finish("test07_anchors")
 

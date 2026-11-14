@@ -138,6 +138,10 @@ def main():
             k16("l6e_anchor_file_links_inside_target", [link(anchor=ref)], "FAIL", "the target's anchors.json is a symbolic link, not followed", want_rc=1)
             (T / "anchors.json").unlink()
             (T / "anchors-real.json").unlink()
+            # gate-f1f2 M9: a DANGLING link names the link, not the generic "no entry" line
+            (T / "anchors.json").symlink_to("no-such-file.json")
+            k16("l6f_anchor_file_dangling_symlink", [link(anchor=ref)], "FAIL", "the target's anchors.json is a symbolic link, not followed", want_rc=1)
+            (T / "anchors.json").unlink()
             (T / "anchors.json").write_text("[]\n", encoding="utf-8")
         f.case("l6_anchor", l6)
 
