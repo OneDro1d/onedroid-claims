@@ -1,0 +1,20 @@
+{
+  "snapshots": [
+    {
+      "anchor": {
+        "block": null,
+        "chain": null,
+        "status": "not anchored yet",
+        "tx_hash": null
+      },
+      "date": "2026-11-13",
+      "format": "claims-snapshot/0.6",
+      "kind": "pre-witness",
+      "manifest_sha256": "5555abd51542ecaea37b0ef6435453275694e1a62c52e8454ddec997ee0620e1",
+      "org": "onedroid",
+      "profile": "agent-work",
+      "slug": "packager-r03-fix",
+      "title": "Claims of agent session faed1a33-924a-4fdd-a5d5-48bbfbddfc59 at turn end #312"
+    }
+  ]
+}
