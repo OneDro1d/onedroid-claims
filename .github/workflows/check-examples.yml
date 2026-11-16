@@ -60,6 +60,10 @@ jobs:
         run: python3 -I check.py examples/witness-service-aw4-2026-11-13
       - name: the witness service's live output, test-run (0.1.6, 13 Nov 2026, carried headers; one bound WARN since the bound cut, one sources WARN since the sources cut)
         run: python3 -I check.py examples/witness-service-tr4-2026-11-13
+      - name: the snapshot index suite (make_index.py, I1 to I4)
+        run: python3 -I test_make_index.py
+      - name: snapshots/index.json is current (regenerate with python3 -I make_index.py and commit it)
+        run: python3 -I make_index.py --check
       - name: the key list parses (empty until the witness service mints keys)
         run: python3 -c "import json; [json.loads(l) for l in open('keys/model-keys.jsonl') if l.strip()]; print('key list ok')"
       - name: the anchor signer list parses (0.7, empty until the first anchor grant is listed)
