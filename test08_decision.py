@@ -68,7 +68,7 @@ def build(dst, fmt=F08, *, ledger=True, override=False, by_kind="person", held_b
          "kind": "figure", "evidence": [ptr("event.json") if ledger else ptr("judgement.json")]},
         {"id": "C-003", "text": (f"Decided under {rid}@{rver}, departing from the recommendation because the decider held a document the judgement had not seen."
                                  if override else f"Decided under {rid}@{rver}: the claim met every listed requirement."),
-         "kind": "other", "evidence": [ptr("judgement.json")]},
+         "kind": "other", "evidence": [ptr("event.json") if ledger else ptr("judgement.json")]},
     ]
     if audit:
         audit(rows)
@@ -236,6 +236,11 @@ def main():
         k1case("k1_c_ref_with_space", "item.ref matches its pattern", "item.ref", ref="dkt 0042", subject=setp("title", "decision on dkt 0042"))
         k1case("k1_c_ref_too_long", "item.ref is at most 64 characters", "item.ref", ref="r" * 65, subject=setp("title", "decision on " + "r" * 65))
         k1case("k1_d_by_kind_outside", "decision.by.kind is person or pipeline", "decision.by.kind", subject=setp("decision.by.kind", "committee"))
+        # the format owner's gate cases (16 Nov 2026): each kills a mutant the builder's suite let through
+        k1case("k1_b_title_with_more_text", "title is EXACTLY decision on <item.ref>, nothing after it", "title",
+               subject=setp("title", "decision on dkt-0042 for a named party"))
+        k1case("k1_c_ref_with_slash", "item.ref has no path separator", "item.ref", ref="dkt/0042", subject=setp("title", "decision on dkt/0042"))
+        k1case("k1_d_by_kind_agent", "decision.by.kind has no third value", "decision.by.kind", subject=setp("decision.by.kind", "agent"))
         k1case("k1_e_override_false_but_differs", "override equals (value != recommendation)", "override", subject=setp("decision.override", True))
         k1case("k1_e_override_true_but_equal", "override equals (value != recommendation), the other way", "override",
                subject=lambda S: S["decision"].update({"value": "approve", "override": True}))
@@ -274,6 +279,20 @@ def main():
                 audit=lambda rows: rows[2].update({"text": "Decided because the claim met every listed requirement."}))
         k11case("k11_b_c003_wrong_version", "C-003 contains <id>@<version> exactly", "C-003",
                 audit=lambda rows: rows[2].update({"text": "Decided under claims-rules@2: the claim met every listed requirement."}))
+        k11case("k11_b_c003_ruleset_other_case", "C-003 contains <id>@<version> exactly (case counts)", "C-003",
+                audit=lambda rows: rows[2].update({"text": "Decided under CLAIMS-RULES@3: the claim met every listed requirement."}))
+        k11case("k11_b_c003_other_ruleset_same_version", "C-003 names the rule set's id, not only its version", "C-003",
+                audit=lambda rows: rows[2].update({"text": "Decided under other-rules@3: the claim met every listed requirement."}))
+        k11case("k11_f_c003_not_the_event", "with a ledger, C-003's evidence names the decision event", "C-003",
+                audit=lambda rows: rows[2].update({"evidence": [rows[0]["evidence"][1]]}))
+        k11case("k11_f_c003_not_the_judgement", "without a ledger, C-003's evidence names the judgement", "C-003",
+                ledger=False, audit=lambda rows: rows[2].update({"evidence": [rows[0]["evidence"][0]]}))
+        k11case("k11_g_c001_without_item", "C-001's evidence names the item", "C-001",
+                audit=lambda rows: rows[0].update({"evidence": [rows[0]["evidence"][1]]}))
+        k11case("k11_g_c001_without_judgement", "C-001's evidence names the judgement", "C-001",
+                audit=lambda rows: rows[0].update({"evidence": [rows[0]["evidence"][0]]}))
+        k11case("k11_g_c002_no_ledger_not_judgement", "without a ledger, C-002's evidence names the judgement", "C-002",
+                ledger=False, audit=lambda rows: rows[1].update({"evidence": [rows[0]["evidence"][0]]}))
         k11case("k11_c_override_reason_empty", "an override's C-003 with the string removed holds a letter", "override",
                 override=True, audit=lambda rows: rows[2].update({"text": "claims-rules@3"}))
         k11case("k11_c_override_reason_only_marks", "an override's reason holds a letter beyond the string", "override",

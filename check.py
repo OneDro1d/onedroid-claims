@@ -1856,6 +1856,27 @@ def _main(argv, R):
                               and p_.get("artefact") == ev_.get("artefact") and p_.get("sha256") == ev_.get("sha256")]
                     if not names_:
                         bad.append(f"C-002: the evidence does not name the decision event (subject.ledger.event {ev_.get('artefact')!r} sha256 {str(ev_.get('sha256'))[:12]}...): with a ledger C-002 rests on that event")
+                # 0.8 amendment (the format's owner, 16 Nov 2026, at the gate of Indie #83): C-001 names the item and the judgement; without a
+                # ledger C-002 names the judgement; C-003 names the decision event when there is a ledger (the reason is recorded in it), else
+                # the judgement. "Names" = an artefact pointer with that artefact name AND that sha256.
+                def names_ptr(row_, ptr_):
+                    return isinstance(ptr_, dict) and any(isinstance(p_, dict) and p_.get("artefact") == ptr_.get("artefact") and p_.get("sha256") == ptr_.get("sha256")
+                                                          for p_ in (row_.get("evidence") if isinstance(row_.get("evidence"), list) else []))
+                on_ = (sub_.get("basis") or {}).get("on")
+                it_ = sub_.get("item") if isinstance(sub_.get("item"), dict) else {}
+                c1 = next((a for a in audit if a.get("id") == "C-001"), None)
+                if c1 is not None:
+                    if not any(isinstance(p_, dict) and p_.get("sha256") == it_.get("sha256") for p_ in (c1.get("evidence") if isinstance(c1.get("evidence"), list) else [])):
+                        bad.append(f"C-001: the evidence does not name the item (subject.item.sha256 {str(it_.get('sha256'))[:12]}...)")
+                    if not names_ptr(c1, on_):
+                        bad.append("C-001: the evidence does not name the judgement (subject.basis.on)")
+                if c2 is not None and not isinstance(ev_, dict) and not names_ptr(c2, on_):
+                    bad.append("C-002: the evidence does not name the judgement (subject.basis.on): without a ledger C-002 rests on it")
+                if c3 is not None:
+                    if isinstance(ev_, dict) and not names_ptr(c3, ev_):
+                        bad.append(f"C-003: the evidence does not name the decision event (subject.ledger.event {ev_.get('artefact')!r}): with a ledger the reason is recorded in that event")
+                    elif not isinstance(ev_, dict) and not names_ptr(c3, on_):
+                        bad.append("C-003: the evidence does not name the judgement (subject.basis.on): without a ledger C-003 rests on it")
             au = g.get("auditor") or {}
             if au.get("file", "audit.jsonl") != "audit.jsonl" or (au.get("sha256") and au["sha256"] != audit_h):
                 bad.append(f"grading.auditor: file {au.get('file')!r} / sha256 {str(au.get('sha256'))[:12]}… does not match audit.jsonl {audit_h[:12]}…")

@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: the checker is the 0.8 draft (claims-snapshot 0.8 of 16 Nov 2026, the decision profile; the 0.7 checker was b30d26ba, sha256 9bf4ddba)
         run: |
-          echo "3ad87244fd683f914c4f233f9644c5fa96be63e4f9af32010bf9111752250698  check.py" > checker.sha256
+          echo "f931cc7e2602408987a2bd782b442d785be30f8ed4a94d60180b6d18d3f72f41  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.8 (imported from the checked-out tree, so no -I here)
         run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.8' in check.FORMATS and 'claims-snapshot/0.7' in check.FORMATS and 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
