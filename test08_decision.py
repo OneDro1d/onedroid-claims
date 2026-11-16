@@ -108,6 +108,7 @@ def build(dst, fmt=F08, *, ledger=True, override=False, by_kind="person", held_b
                                  "sha256": audit_h, "signer": f"{f.AUDITOR} <{fp}>"},
                      "gates": [], "graded_at": "2026-11-16T11:00:00Z", "grader": "fixture-reader", "kind": "split", "method": wmethod or "read",
                      "model": "human", "profile": "decision", "rounds": [], "sessions": [],
+                     **({"primary_named_by": f.AUDITOR} if wkind == "model" else {}),
                      "witnesses": [{"file": "witness/fixture-reader.jsonl", "method": wmethod or "read", "missing_claims": 0, "model": header["model"],
                                     "name": "fixture-reader", "primary": True, "kind": wkind, "signer": f.WITNESS,
                                     "score": {"band": sc["band"], "contradiction_pct": sc["contradiction_pct"], "coverage_pct": sc["coverage_pct"]},
@@ -126,6 +127,8 @@ def build(dst, fmt=F08, *, ledger=True, override=False, by_kind="person", held_b
     if sign:
         f.sign(dst, "auditor", "auditor", f.AUDITOR, "audit.jsonl")
         f.sign(dst, "witness", "witness", f.WITNESS, "witness/fixture-reader.jsonl")
+        if wkind == "model":
+            f.sign(dst, "manifest", "auditor", f.AUDITOR)  # the principal that chose a model as primary signs the manifest (K11, section 14)
     return dst
 
 
@@ -287,8 +290,8 @@ def main():
 
         def k11_classify_ok():
             r = run("k11_e_classify_model_ok", wmethod="classify", wkind="model")
-            ok = r.status.get("K11") is not None and r.status.get("K1") == "PASS" and not r.has("K11", "method") and no_trace(r)
-            f.report("k11_e_classify_model_ok", ok, "a model witness with method classify: K11 says nothing about the method",
+            ok = r.status.get("K11") in ("PASS", "WARN") and r.status.get("K1") == "PASS" and not r.has("K11", "method") and no_trace(r)
+            f.report("k11_e_classify_model_ok", ok, "a model witness with method classify (named primary, manifest signed): K11 PASS or WARN, nothing about the method",
                      f"K11 {r.status.get('K11')}", [r.text.get("K11", "")[:360]])
         f.case("k11_e_classify_model_ok", k11_classify_ok)
 

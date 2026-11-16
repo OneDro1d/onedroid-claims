@@ -27,11 +27,14 @@ auditor's pointers and candidate quotes without a verdict, K8 and K12 WARN that 
 0.7 (14 Nov 2026, SPEC 15): every rule keyed on 0.6 reads "0.6 or later" (fmt_at_least), so a 0.7 folder inherits them all; the manifest
 field `links` and K16; the auditor's `sources` signature over six sections (links too); K14 reads an armarium ref's `signer` and a
 `gvui`; --export verifies the in-toto/DSSE and VC 2.0 exports with a standard-library Ed25519. A 0.6 or older folder never reaches a 0.7
-rule, so its output is byte-identical to the 0.6 checker's."""
+rule, so its output is byte-identical to the 0.6 checker's.
+0.8 (16 Nov 2026, SPEC 16): the format claims-snapshot/0.8 and the decision profile (a decision on one item under one rule set: three
+claims, evidence by artefact hash, a private record). Its K1 and K11 rules, its witness methods read and classify, and K5/K6 for artefact
+pointers (section 13, unchanged) run on a 0.8 folder of that profile only (fmt_at_least), so a 0.2 to 0.7 folder gives byte-identical output."""
 import traceback
 import base64, datetime, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
 
-FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7"}
+FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7", "claims-snapshot/0.8"}
 FORMAT_RE = re.compile(r"^claims-snapshot/0\.([0-9]{1,3})$")
 
 
@@ -62,6 +65,13 @@ PROFILES = {"cited-sources", "publisher-surfaces", "agent-work", "test-run"}  # 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 TIME_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 HELD_BY = {"folder", "fleet", "blob", "subject-org"}
+# 0.8 (SPEC 16): the decision profile. Known from claims-snapshot/0.8 only, so PROFILES (what a 0.2 to 0.7 folder is checked against) is unchanged.
+DECISION_PROFILE = "decision"
+EVIDENCE_PROFILES = ("agent-work", "test-run", DECISION_PROFILE)  # profiles whose auditor part is evidence-shaped and whose auditor signature is a promise
+ARTEFACT_PROFILES = ("test-run", DECISION_PROFILE)  # profiles whose evidence pointers may be {"artefact", "sha256"} (SPEC 13, 16)
+DECISION_REF_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+DECISION_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+DECISION_DECIDERS = {"person", "pipeline"}
 
 
 def parse_time(t):
@@ -1196,6 +1206,114 @@ def main(argv):
         return 1
 
 
+def locator_faults(M, snap):
+    """The evidence locator rules of SPEC 13, shared by the test-run profile (0.5) and the decision profile (0.8, SPEC 16): the locator is
+    present with `held_by`, `where`, `expires_at` and `note`; `held_by` is in its vocabulary; `expires_at` is null or a time; a holder other than
+    the folder names `where`; with `held_by: folder` every artefact source has its copy in the folder. The problems, as text, in the order found."""
+    bad = []
+    loc_ = M.get("evidence_locator")
+    if not isinstance(loc_, dict):
+        bad.append("evidence_locator missing")
+    else:
+        for k_ in ("held_by", "where", "expires_at", "note"):
+            if k_ not in loc_:
+                bad.append(f"evidence_locator.{k_}")
+        if "held_by" in loc_ and loc_["held_by"] not in HELD_BY:
+            bad.append(f"evidence_locator.held_by={loc_['held_by']!r} not in {sorted(HELD_BY)}")
+        if loc_.get("expires_at") is not None and parse_time(loc_.get("expires_at")) is None:
+            bad.append(f"evidence_locator.expires_at={loc_.get('expires_at')!r} is not null or a time")
+        if loc_.get("held_by") in HELD_BY and loc_.get("held_by") != "folder" and not (isinstance(loc_.get("where"), str) and loc_["where"].strip()):
+            # trilix, adoption of section 13 (WB): the writer refuses a holder without `where`; the checker holds the same rule
+            bad.append(f"evidence_locator.held_by is {loc_['held_by']} but where is {loc_.get('where')!r}: a holder other than the folder is named by its url or path")
+        if loc_.get("held_by") == "folder":
+            for s_ in (M.get("sources") or []):
+                if isinstance(s_, dict) and s_.get("role") == "artefact" and not (s_.get("file") and (snap / s_["file"]).exists()):
+                    bad.append(f"evidence_locator.held_by is folder but artefact {s_.get('name') or s_.get('path')!r} has no copy in the folder (file {s_.get('file')!r})")
+    return bad
+
+
+def decision_subject_faults(M):
+    """K1 for the decision profile (SPEC 16, 0.8), the subject only (the locator is locator_faults): every field present with its type
+    (a string field non-empty, `basis.recommendation` and `basis.ruleset.digest` strings that may be empty, a sha256 64 lower-case hex,
+    `decision.override` a boolean, `decision.at` a time, `ledger` null or an object); `title` is `decision on ` and `item.ref`; `item.ref`
+    matches `[A-Za-z0-9_.-]{1,64}`; `decision.value` is a token of letters, digits, `_` and `-`; `decision.by.kind` is person or pipeline;
+    `decision.override` equals (`decision.value` != `basis.recommendation`); `taken_at` equals `decision.at`; `ledger` carries a `stream`, an
+    integer `n` of 1 or more (a boolean is no integer) and an `event` with an artefact name and a sha256. The problems, as text."""
+    bad = []
+    sub = M.get("subject")
+    if not isinstance(sub, dict):
+        return ["subject must be an object"]
+
+    def at(path):
+        cur = sub
+        for k_ in path:
+            cur = cur.get(k_, KeyError) if isinstance(cur, dict) else KeyError
+        return cur
+
+    def text(path, may_be_empty=False, hexed=False):
+        v_, label = at(path), "subject." + ".".join(path)
+        if v_ is KeyError:
+            bad.append(label)
+        elif not isinstance(v_, str):
+            bad.append(label + " must be a string")
+        elif not v_.strip() and not may_be_empty:
+            bad.append(label + " empty")
+        elif hexed and not HEX64.match(v_):
+            bad.append(label + " not 64 hex")
+        return v_ if isinstance(v_, str) else None
+
+    if sub.get("kind") != DECISION_PROFILE:
+        bad.append(f"subject.kind={sub.get('kind')!r} must be {DECISION_PROFILE!r}")
+    title = text(("title",))
+    ref = text(("item", "ref"))
+    text(("item", "sha256"), hexed=True)
+    value = text(("decision", "value"))
+    text(("decision", "by", "principal"))
+    kind = text(("decision", "by", "kind"))
+    when = text(("decision", "at"))
+    rec = text(("basis", "recommendation"), may_be_empty=True)
+    text(("basis", "on", "artefact"))
+    text(("basis", "on", "sha256"), hexed=True)
+    text(("basis", "ruleset", "id"))
+    text(("basis", "ruleset", "version"))
+    text(("basis", "ruleset", "digest"), may_be_empty=True)
+    ov = at(("decision", "override"))
+    if ov is KeyError:
+        bad.append("subject.decision.override")
+    elif not isinstance(ov, bool):
+        bad.append("subject.decision.override must be a boolean")
+    if ref is not None and ref.strip() and not DECISION_REF_RE.match(ref):
+        bad.append(f"subject.item.ref {ref[:70]!r} is not 1 to 64 of letters, digits, '-', '_' and '.' (an opaque reference)")
+    if title is not None and ref is not None and title != "decision on " + ref:
+        bad.append(f"subject.title {title[:80]!r} is not 'decision on ' followed by item.ref (a free title is how a name leaks)")
+    if value is not None and value.strip() and not DECISION_VALUE_RE.match(value):
+        bad.append(f"subject.decision.value {value[:40]!r} is not a token of letters, digits, '_' and '-'")
+    if kind is not None and kind.strip() and kind not in DECISION_DECIDERS:
+        bad.append(f"subject.decision.by.kind={kind!r} not in {sorted(DECISION_DECIDERS)}")
+    if when is not None and when.strip() and parse_time(when) is None:
+        bad.append(f"subject.decision.at={when!r} is not a time (YYYY-MM-DDTHH:MM:SSZ)")
+    if isinstance(ov, bool) and value is not None and rec is not None and ov != (value != rec):
+        bad.append(f"subject.decision.override is {ov!r} but value {value!r} and basis.recommendation {rec!r} make it {value != rec!r}")
+    if when is not None and M.get("taken_at") != when:
+        bad.append(f"taken_at {M.get('taken_at')!r} is not subject.decision.at {when!r}")
+    led = at(("ledger",))
+    if led is KeyError:
+        bad.append("subject.ledger (null, or an object with stream, n and event)")
+    elif led is not None:
+        if not isinstance(led, dict):
+            bad.append("subject.ledger must be null or an object")
+        else:
+            text(("ledger", "stream"))
+            n_ = led.get("n", KeyError)
+            if n_ is KeyError:
+                bad.append("subject.ledger.n")
+            elif not isinstance(n_, int) or isinstance(n_, bool) or n_ < 1:
+                bad.append(f"subject.ledger.n={n_!r} must be an integer of 1 or more")
+            text(("ledger", "event", "artefact"))
+            text(("ledger", "event", "sha256"), hexed=True)
+    return bad
+
+
 def _main(argv, R):
     if len(argv) < 2:
         print(__doc__)
@@ -1239,8 +1357,9 @@ def _main(argv, R):
     for k in (("kind", "profile") if pre else ("kind", "grader", "model", "profile")):
         if k not in g:
             missing.append(f"grading.{k}")
-    if g.get("profile") not in PROFILES:
-        missing.append(f"grading.profile={g.get('profile')!r} not in {sorted(PROFILES)}")
+    profiles_ = PROFILES | {DECISION_PROFILE} if fmt_at_least(M, "0.8") else PROFILES  # 0.8: the decision profile exists from claims-snapshot/0.8
+    if g.get("profile") not in profiles_:
+        missing.append(f"grading.profile={g.get('profile')!r} not in {sorted(profiles_)}")
     pre_bad = []  # pre-witness (SPEC 14): what the stage forbids, said as such
     if pre:
         if not fmt_at_least(M, "0.6"):  # 0.7: "0.6 or later" (was: exactly 0.6)
@@ -1290,37 +1409,26 @@ def _main(argv, R):
             tr_bad.append(f"subject.started_at {sub.get('started_at')} is after finished_at {sub.get('finished_at')}")
         if "finished_at" in sub and M.get("taken_at") != sub.get("finished_at"):
             tr_bad.append(f"taken_at {M.get('taken_at')!r} is not subject.finished_at {sub.get('finished_at')!r}")
-        loc_ = M.get("evidence_locator")
-        if not isinstance(loc_, dict):
-            tr_bad.append("evidence_locator missing")
-        else:
-            for k_ in ("held_by", "where", "expires_at", "note"):
-                if k_ not in loc_:
-                    tr_bad.append(f"evidence_locator.{k_}")
-            if "held_by" in loc_ and loc_["held_by"] not in HELD_BY:
-                tr_bad.append(f"evidence_locator.held_by={loc_['held_by']!r} not in {sorted(HELD_BY)}")
-            if loc_.get("expires_at") is not None and parse_time(loc_.get("expires_at")) is None:
-                tr_bad.append(f"evidence_locator.expires_at={loc_.get('expires_at')!r} is not null or a time")
-            if loc_.get("held_by") in HELD_BY and loc_.get("held_by") != "folder" and not (isinstance(loc_.get("where"), str) and loc_["where"].strip()):
-                # trilix, adoption of section 13 (WB): the writer refuses a holder without `where`; the checker holds the same rule
-                tr_bad.append(f"evidence_locator.held_by is {loc_['held_by']} but where is {loc_.get('where')!r}: a holder other than the folder is named by its url or path")
-            if loc_.get("held_by") == "folder":
-                for s_ in (M.get("sources") or []):
-                    if isinstance(s_, dict) and s_.get("role") == "artefact" and not (s_.get("file") and (snap / s_["file"]).exists()):
-                        tr_bad.append(f"evidence_locator.held_by is folder but artefact {s_.get('name') or s_.get('path')!r} has no copy in the folder (file {s_.get('file')!r})")
+        tr_bad.extend(locator_faults(M, snap))
+    dc_bad = []  # decision (SPEC 16, 0.8): the subject's fields and rules, the evidence locator
+    if g.get("profile") == DECISION_PROFILE and fmt_at_least(M, "0.8"):
+        dc_bad = decision_subject_faults(M)
+        dc_bad.extend(locator_faults(M, snap))
     for i, gate in enumerate(g.get("gates", []) or []):
         for k in ("run", "size", "sealed_sha256", "sealed_at", "first_gate", "final"):
             if k not in gate:
                 missing.append(f"grading.gates[{i}].{k}")
-    k1_text = "manifest fields" + (": missing " + ", ".join(missing) if missing else (" present" if tr_bad or pre_bad else f" present, format {M.get('format')}, profile {g.get('profile')}, {len(g.get('gates', []) or [])} holdout gate(s) recorded"))
+    k1_text = "manifest fields" + (": missing " + ", ".join(missing) if missing else (" present" if tr_bad or pre_bad or dc_bad else f" present, format {M.get('format')}, profile {g.get('profile')}, {len(g.get('gates', []) or [])} holdout gate(s) recorded"))
     if tr_bad:
         k1_text += "; test-run subject or locator: " + ", ".join(tr_bad)
+    if dc_bad:
+        k1_text += "; decision subject or locator: " + ", ".join(dc_bad)
     if pre_bad:
         k1_text += "; pre-witness folder " + ", ".join(pre_bad)
     elif pre and not missing:
         k1_text += "; pre-witness: the auditor's part alone, no primary witness named yet"
-    R.add("K1", "FAIL" if missing or tr_bad or pre_bad else "PASS", k1_text)
-    if missing or tr_bad or pre_bad:
+    R.add("K1", "FAIL" if missing or tr_bad or pre_bad or dc_bad else "PASS", k1_text)
+    if missing or tr_bad or pre_bad or dc_bad:
         return finish(R, snap, argv, M.get("format"))
 
     # K2 files and hashes: every content file the manifest names, wherever it names it, each once (13 Nov 2026, NEXT-REVISION 20 and 22):
@@ -1508,8 +1616,8 @@ def _main(argv, R):
             return "failed"
         if "output_sha256" in p and ("command" in p or "test" in p):
             return "verified" if p["output_sha256"] in by_sha else "untestable"
-        if "artefact" in p and profile == "test-run":
-            # 0.5, test-run (SPEC 13): an artefact of the run by name and hash, verified from the folder's copy
+        if "artefact" in p and profile in ARTEFACT_PROFILES:
+            # 0.5, test-run (SPEC 13), and 0.8, decision (SPEC 16, K5/K6 unchanged): an artefact of the run by name and hash, verified from the folder's copy
             h_, nm_ = p.get("sha256"), p.get("artefact")
             if not (isinstance(h_, str) and HEX64.match(h_)) or not nm_:
                 return "failed"
@@ -1724,6 +1832,30 @@ def _main(argv, R):
                         bad.append(f"C-003: subject.system_under_test.commit {commit_!r} is shorter than 7 characters")
                     elif commit_[:7].lower() not in str(c3.get("text", "")).lower():
                         bad.append(f"C-003: text does not name the commit of the system under test (a prefix of {commit_[:12]}, 7 characters or more)")
+            if profile == DECISION_PROFILE and fmt_at_least(M, "0.8"):
+                # 0.8, decision (SPEC 16): exactly three claims with those kinds; C-003 names the rule set as <id>@<version>; an override's
+                # C-003 holds a letter beyond that string; with a ledger C-002's evidence names the ledger event (artefact name and sha256)
+                want_ = [("C-001", "process"), ("C-002", "figure"), ("C-003", "other")]
+                got_ = [(a.get("id"), a.get("kind")) for a in audit]
+                if got_ != want_:
+                    bad.append(f"audit.jsonl: decision needs exactly {want_}, found {got_}")
+                sub_ = M.get("subject") if isinstance(M.get("subject"), dict) else {}
+                rs_ = (sub_.get("basis") or {}).get("ruleset") or {}
+                tag_ = f"{rs_.get('id')}@{rs_.get('version')}"
+                c3 = next((a for a in audit if a.get("id") == "C-003"), None)
+                if c3 is not None:
+                    t3_ = str(c3.get("text", ""))
+                    if tag_ not in t3_:
+                        bad.append(f"C-003: text does not contain the rule set as {tag_!r} (basis.ruleset.id@basis.ruleset.version)")
+                    elif (sub_.get("decision") or {}).get("override") is True and not any(ch_.isalpha() for ch_ in t3_.replace(tag_, "")):
+                        bad.append(f"C-003: an override (subject.decision.override true) needs the decider's reason in words beyond {tag_!r}: the text holds no letter once the rule set is removed")
+                ev_ = (sub_.get("ledger") or {}).get("event") if isinstance(sub_.get("ledger"), dict) else None
+                c2 = next((a for a in audit if a.get("id") == "C-002"), None)
+                if isinstance(ev_, dict) and c2 is not None:
+                    names_ = [p_ for p_ in (c2.get("evidence") if isinstance(c2.get("evidence"), list) else []) if isinstance(p_, dict)
+                              and p_.get("artefact") == ev_.get("artefact") and p_.get("sha256") == ev_.get("sha256")]
+                    if not names_:
+                        bad.append(f"C-002: the evidence does not name the decision event (subject.ledger.event {ev_.get('artefact')!r} sha256 {str(ev_.get('sha256'))[:12]}...): with a ledger C-002 rests on that event")
             au = g.get("auditor") or {}
             if au.get("file", "audit.jsonl") != "audit.jsonl" or (au.get("sha256") and au["sha256"] != audit_h):
                 bad.append(f"grading.auditor: file {au.get('file')!r} / sha256 {str(au.get('sha256'))[:12]}… does not match audit.jsonl {audit_h[:12]}…")
@@ -1784,7 +1916,7 @@ def _main(argv, R):
                             bad.append(f"witness {name!r}: carried {cpath_!r}: sha256 {ch_!r} is not 64 hex characters")
                         elif ch_ != inv_[cpath_]:
                             bad.append(f"witness {name!r}: carried {cpath_!r} sha256 {ch_[:12]}… differs from the manifest's {inv_[cpath_][:12]}…: the witness read other bytes than the record holds")
-            elif ek == "model" and (profile in ("agent-work", "test-run") or any(isinstance(a_.get("evidence"), list) for a_ in audit)):
+            elif ek == "model" and (profile in EVIDENCE_PROFILES or any(isinstance(a_.get("evidence"), list) for a_ in audit)):
                 # evidence-shaped auditor part (SPEC 12 and 13): the decisive input is the carried files, so a model witness must say what it read
                 k11_warn.append(f"witness {name!r}: a model witness over an evidence-shaped auditor part records no `carried`: what the models read is not on record (0.1.6 of the witness service writes it)")
             # the bound cut (13 Nov 2026, the seventh re-gate's U1): `carried` binds bytes, not which source entry a pointer resolved through, so
@@ -1806,7 +1938,7 @@ def _main(argv, R):
                             bad.append(f"witness {name!r}: bound {sec_!r}: sha256 {bv_!r} is not 64 hex characters")
                         elif bv_ != want_[sec_]:
                             bad.append(f"witness {name!r}: bound {sec_!r} sha256 {bv_[:12]}… differs from this record's {want_[sec_][:12]}…: the witness read a manifest whose {sec_} is not this record's")
-            elif "carried" in header and ek == "model" and (profile in ("agent-work", "test-run") or any(isinstance(a_.get("evidence"), list) for a_ in audit)):
+            elif "carried" in header and ek == "model" and (profile in EVIDENCE_PROFILES or any(isinstance(a_.get("evidence"), list) for a_ in audit)):
                 # 30(a) (the one-auditor cut, 13 Nov 2026): since 0.1.10 every witness header and service.json carry `service_version`, and
                 # 0.1.8 and later always write `bound`, so a header that names such a version and has no `bound` was not written by that
                 # service: FAIL. The version is the header's `service_version`, else the manifest witness entry's, else service.json's when
@@ -1832,6 +1964,10 @@ def _main(argv, R):
             w_hdr[name], w_kind[name], w_kind_file[wf] = header, ek, ek
             if header.get("method") == "classify" and ek != "model":
                 bad.append(f"witness {name!r}: method 'classify' is for a witness of kind 'model' only (this one is {ek!r})")
+            if profile == DECISION_PROFILE and fmt_at_least(M, "0.8"):
+                # 0.8, decision (SPEC 16): `read` or `classify`, and anything else fails; there is no `re-run` (a decision is not run again)
+                if header.get("method") not in ("read", "classify"):
+                    bad.append(f"witness {name!r}: method {header.get('method')!r} must be 'read' or 'classify' (a decision has no re-run: a second run is a new decision with its own record)")
             if profile == "test-run":
                 if header.get("method") not in ("read", "re-run", "classify"):
                     bad.append(f"witness {name!r}: method {header.get('method')!r} must be 'read', 're-run' or 'classify'")
@@ -2161,13 +2297,13 @@ def _main(argv, R):
                 if f not in covered:
                     if f == "manifest.json":
                         continue  # 0.6: the manifest signature is optional (K11 asks for it when primary_named_by is set)
-                    if profile == "test-run" and f == "audit.jsonl":
+                    if profile in ARTEFACT_PROFILES and f == "audit.jsonl":
                         continue  # judged below: FAIL for this profile
                     warn.append(f"{f}: unsigned")
             # R5 (the sources cut): a model witness over an evidence-shaped auditor part (SPEC 12 and 13, or any audit row with an `evidence`
             # list) and no `sources` signature: the sources list rests on the published copy and the service's key alone. Nothing is printed
             # otherwise, so every 0.2 to 0.5 folder and every pre-witness folder without a model witness stays byte-identical.
-            if (any(k_ == "model" for k_ in w_kind.values()) and (profile in ("agent-work", "test-run") or any(isinstance(a_.get("evidence"), list) for a_ in audit))
+            if (any(k_ == "model" for k_ in w_kind.values()) and (profile in EVIDENCE_PROFILES or any(isinstance(a_.get("evidence"), list) for a_ in audit))
                     and not any(e.get("role") == "sources" for e in sigs_d)):
                 warn.append("manifest.json: no sources signature: the sources list rests on the published copy and the witness service's key alone (sign.py --role sources, the auditor's key)")
             # 0.5, agent-work: the witness is never the auditor (OneDroid Indie VR-I11). The agent signs with the key its
@@ -2181,7 +2317,7 @@ def _main(argv, R):
             prim_file = next((w.get("file") for w in witnesses if w.get("primary")), None)
             gates_ = g.get("gates")
             declared_self_audit = g.get("kind") == "self-audit" and isinstance(gates_, list) and len(gates_) > 0
-            if (profile in ("agent-work", "test-run") or ma_files) and allowed.exists() and isinstance(sigs, list):
+            if (profile in EVIDENCE_PROFILES or ma_files) and allowed.exists() and isinstance(sigs, list):
                 keys = allowed_keys(allowed)  # the key by type and base64; a trailing comment is not part of it (ssh-keygen ignores it, so must this comparison)
                 # A4 (the auditor-key cut): the key sets hold the listed keys AND the key embedded in each entry's signature file, so a
                 # witness file signed with the auditor's key is caught by the key itself, whatever allowed_signers lists under the name
@@ -2191,7 +2327,7 @@ def _main(argv, R):
                 for e in sigs_d:
                     w_keys = keys.get((e.get("signer") or {}).get("name"), set()) | ({emb_of(e)} if e.get("role") == "witness" and emb_of(e) else set())
                     if e.get("role") == "witness" and w_keys & a_keys:
-                        if profile in ("agent-work", "test-run"):
+                        if profile in EVIDENCE_PROFILES:
                             bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor ({profile}, VR-I11)")
                         elif e.get("file") in ma_files:
                             k_ = w_kind_file[e.get("file")]
@@ -2200,8 +2336,11 @@ def _main(argv, R):
                             else:
                                 bad.append(f"{e.get('file')}: signed with the auditor's key: the witness is never the auditor (kind {k_}, {profile})"
                                            + ("; an agent keeps one signer only as the primary of a declared self-audit (grading.kind self-audit, grading.gates recorded)" if k_ == "agent" else ""))
-        if profile == "test-run" and "audit.jsonl" not in covered:
-            bad.append("audit.jsonl: unsigned: the run record is a claim nobody stands behind (test-run needs the auditor's signature)")
+        if profile in ARTEFACT_PROFILES and "audit.jsonl" not in covered:
+            if profile == DECISION_PROFILE:
+                bad.append("audit.jsonl: unsigned: the decision record is a claim nobody stands behind (decision needs the deciding system's signature)")
+            else:
+                bad.append("audit.jsonl: unsigned: the run record is a claim nobody stands behind (test-run needs the auditor's signature)")
         # 0.6: a witness of kind model: its file is named for its manifest entry, and its principal is in the key list,
         # bound to the header's model for the witness's started_at. --keys FILE is the published list (a broken binding fails);
         # the snapshot's own keys/model-keys.jsonl is a copy of it (a broken binding there warns); neither at hand warns.
@@ -2286,7 +2425,7 @@ def _main(argv, R):
             # 0.7 and later only, so every older folder's output is unchanged
             bad.append("anchors.json is a symbolic link, not followed: the checker follows none")
         elif not anc_p.exists():
-            warn.append("no anchors.json: nothing fixes the signatures in time" + ("; no anchor exists yet (test-run: an anchor over the signatures file is optional until armarium ships)" if profile == "test-run" else ""))
+            warn.append("no anchors.json: nothing fixes the signatures in time" + (f"; no anchor exists yet ({profile}: an anchor over the signatures file is optional until armarium ships)" if profile in ARTEFACT_PROFILES else ""))
         else:
             try:
                 anchors = json.loads(anc_p.read_text(encoding="utf-8"))
@@ -2332,8 +2471,8 @@ def _main(argv, R):
                         warn.append(f"anchors[{i}]: {hashes[over]} anchored by ots at {a.get('time')}, proof not verified here (" + ("pass --fetch" if not fetch else "ots not on PATH") + ")")
                 else:
                     info.append(f"anchors[{i}]: {hashes[over]} anchored by {a.get('method')} ({a.get('ref')}) at {a.get('time')}: binding holds, the anchor itself is not checked by this script")
-        if profile == "test-run" and anc_p.exists() and not (info or warn or bad):
-            warn.append("no anchor exists yet: anchors.json lists none (test-run: an anchor over the signatures file is optional until armarium ships)")
+        if profile in ARTEFACT_PROFILES and anc_p.exists() and not (info or warn or bad):
+            warn.append(f"no anchor exists yet: anchors.json lists none ({profile}: an anchor over the signatures file is optional until armarium ships)")
         R.add("K14", "FAIL" if bad else ("WARN" if warn else "PASS"), f"{len(info)} anchor binding(s) hold, {len(warn)} note(s), {len(bad)} broken", bad + warn + info + g_info)
 
         # K15 session records, by hash
