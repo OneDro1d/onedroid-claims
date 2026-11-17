@@ -30,11 +30,14 @@ field `links` and K16; the auditor's `sources` signature over six sections (link
 rule, so its output is byte-identical to the 0.6 checker's.
 0.8 (16 Nov 2026, SPEC 16): the format claims-snapshot/0.8 and the decision profile (a decision on one item under one rule set: three
 claims, evidence by artefact hash, a private record). Its K1 and K11 rules, its witness methods read and classify, and K5/K6 for artefact
-pointers (section 13, unchanged) run on a 0.8 folder of that profile only (fmt_at_least), so a 0.2 to 0.7 folder gives byte-identical output."""
+pointers (section 13, unchanged) run on a 0.8 folder of that profile only (fmt_at_least), so a 0.2 to 0.7 folder gives byte-identical output.
+0.9 (17 Nov 2026, SPEC 16): the format claims-snapshot/0.9 and a third decider, `decision.by.kind` `agent`, which must carry
+`decision.by.enrolled_by` (the person who enrolled the agent, never the agent itself); `enrolled_by` on a person or a pipeline fails. Both
+rules run on 0.9 and later only, so a 0.2 to 0.8 folder gives byte-identical output (a 0.8 folder naming `agent` still fails K1)."""
 import traceback
 import base64, datetime, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
 
-FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7", "claims-snapshot/0.8"}
+FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7", "claims-snapshot/0.8", "claims-snapshot/0.9"}
 FORMAT_RE = re.compile(r"^claims-snapshot/0\.([0-9]{1,3})$")
 
 
@@ -72,6 +75,7 @@ ARTEFACT_PROFILES = ("test-run", DECISION_PROFILE)  # profiles whose evidence po
 DECISION_REF_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 DECISION_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DECISION_DECIDERS = {"person", "pipeline"}
+DECISION_DECIDERS_09 = DECISION_DECIDERS | {"agent"}  # 0.9 (SPEC 16): an agent decides too (a break-glass re-identification), from claims-snapshot/0.9 only
 
 
 def parse_time(t):
@@ -1288,8 +1292,20 @@ def decision_subject_faults(M):
         bad.append(f"subject.title {title[:80]!r} is not 'decision on ' followed by item.ref (a free title is how a name leaks)")
     if value is not None and value.strip() and not DECISION_VALUE_RE.match(value):
         bad.append(f"subject.decision.value {value[:40]!r} is not a token of letters, digits, '_' and '-'")
-    if kind is not None and kind.strip() and kind not in DECISION_DECIDERS:
-        bad.append(f"subject.decision.by.kind={kind!r} not in {sorted(DECISION_DECIDERS)}")
+    deciders = DECISION_DECIDERS_09 if fmt_at_least(M, "0.9") else DECISION_DECIDERS
+    if kind is not None and kind.strip() and kind not in deciders:
+        bad.append(f"subject.decision.by.kind={kind!r} not in {sorted(deciders)}")
+    if fmt_at_least(M, "0.9"):
+        # 0.9: an agent's decision names the person who enrolled the agent; nobody else's decider carries that field
+        by_ = at(("decision", "by"))
+        has_eb = isinstance(by_, dict) and "enrolled_by" in by_
+        if kind == "agent":
+            eb = text(("decision", "by", "enrolled_by"))
+            pr = at(("decision", "by", "principal"))
+            if eb is not None and eb.strip() and eb == pr:
+                bad.append("subject.decision.by.enrolled_by is the agent's own principal: it names the person who enrolled the agent")
+        elif has_eb and kind in DECISION_DECIDERS:
+            bad.append(f"subject.decision.by.enrolled_by is set on a {kind} decider: only an agent's decider names who enrolled it")
     if when is not None and when.strip() and parse_time(when) is None:
         bad.append(f"subject.decision.at={when!r} is not a time (YYYY-MM-DDTHH:MM:SSZ)")
     if isinstance(ov, bool) and value is not None and rec is not None and ov != (value != rec):
