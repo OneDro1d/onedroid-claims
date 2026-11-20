@@ -176,7 +176,20 @@ def make_job(root, state="merged"):
                                                                  "models": {}}, "received_at": "2026-11-20T16:58:00Z"}), encoding="utf-8")
     (job / "job.json").write_text(json.dumps({"state": state, "step": None, "spend_usd": 0.5, "failure": None}), encoding="utf-8")
     make_run(job / JOB_ID)
+    # the audit service's holdout record (onedroid-audit a77639b): the answer file, sealed in job-steps.jsonl before it is compared
+    drawn = len(read_rows(job / JOB_ID / "holdout.jsonl"))
+    report = (json.dumps({"rows": []}, indent=1) + "\n").encode("utf-8")
+    (job / "holdout-report.json").write_bytes(report)
+    steps = [{"at": "2026-11-20T16:59:00Z", "step": "list", "event": "start"},
+             {"at": "2026-11-20T17:02:10Z", "step": "gates", "event": "holdout-sealed", "file": "holdout-report.json",
+              "sha256": sha(report), "model": "anthropic/claude-sonnet-5.5", "drawn": drawn},
+             {"at": "2026-11-20T17:02:11Z", "step": "gates", "event": "holdout", "rows": drawn, "left_out": 0, "disagreements": 0, "ids": []}]
+    write_jsonl(job / "job-steps.jsonl", steps)
     return job
+
+
+def read_rows(p):
+    return [json.loads(l) for l in pathlib.Path(p).read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def tree(d):
@@ -431,13 +444,96 @@ class T(Base):
         (job / "job.json").write_text(json.dumps({"state": "merged"}), encoding="utf-8")
         shutil.copytree(os.environ["P1_DEV_RUN"], job / JOB_ID)
         out = self.tmp / "dev-out"
-        r = convert(job, out, self.key, extra=())
+        r = convert(job, out, self.key, extra=("--legacy-holdout",))  # job 868f06dd ran before the service logged the seal
         self.assertEqual(r.returncode, 0, r.stderr[-1500:] + r.stdout[-1500:])
         c = run_check(out)
         self.assertEqual(c.returncode, 0, c.stdout[-3000:])
         self.assertFalse([l for l in c.stdout.splitlines() if " FAIL" in l])
         if os.environ.get("P1_KEEP_DEV_OUT"):
             shutil.copytree(out, os.environ["P1_KEEP_DEV_OUT"])
+
+
+class Gate(Base):
+    """grading.gates from the audit service's sealed holdout (SPEC.md:19, :73-74, :86; trilix 20 Nov, conditions 1 and 2)."""
+
+    def fresh_job(self, name):
+        job = self.tmp / name / JOB_ID
+        shutil.copytree(self.job, job)
+        return job
+
+    def gate_of(self, out):
+        return json.loads((out / "manifest.json").read_text(encoding="utf-8"))["grading"]["gates"][0]
+
+    def test_t17_gate_is_the_sealed_holdout(self):
+        self.converted()
+        g = self.M["grading"]["gates"][0]
+        steps = read_rows(self.job / "job-steps.jsonl")
+        seal = [s for s in steps if s["event"] == "holdout-sealed"][0]
+        n = seal["drawn"]
+        self.assertEqual(g["run"], f"{JOB_ID} holdout")
+        self.assertEqual(g["size"], n)
+        self.assertEqual(g["sealed_sha256"], sha((self.job / "holdout-report.json").read_bytes()))
+        self.assertEqual(g["sealed_sha256"], seal["sha256"])
+        self.assertEqual(g["sealed_at"], seal["at"])
+        self.assertEqual(g["first_gate"], f"passed {n}/{n}")
+        self.assertEqual(g["final"], f"passed {n}/{n}")
+        self.assertEqual((g["regraded_ids"], g["holdout_amended"]), ([], False))
+        self.assertEqual(g["model"], seal["model"])
+        self.assertNotIn("sealed_note", g)
+        self.assertNotIn("earlier_jobs", g)
+
+    def test_t18_report_changed_after_the_seal_is_refused(self):
+        job = self.fresh_job("t18")
+        (job / "holdout-report.json").write_text('{"rows": [1]}\n', encoding="utf-8")
+        out = self.tmp / "t18-out"
+        r = convert(job, out, self.key)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("holdout-report.json", r.stderr)
+        self.assertFalse(out.exists())
+
+    def test_t19_no_seal_is_refused_unless_legacy(self):
+        job = self.fresh_job("t19")
+        steps = [s for s in read_rows(job / "job-steps.jsonl") if s["event"] != "holdout-sealed"]
+        write_jsonl(job / "job-steps.jsonl", steps)
+        out = self.tmp / "t19-out"
+        r = convert(job, out, self.key)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("holdout-sealed", r.stderr)
+        self.assertFalse(out.exists())
+        out2 = self.tmp / "t19-legacy"
+        r2 = convert(job, out2, self.key, extra=("--own-host", "acme.test", "--legacy-holdout"))
+        self.assertEqual(r2.returncode, 0, r2.stderr[-1500:])
+        g = self.gate_of(out2)
+        held = [s for s in steps if s["event"] == "holdout"][0]
+        self.assertEqual(g["sealed_at"], held["at"])
+        self.assertIn("before the service logged", g["sealed_note"])
+
+    def test_t20_earlier_failed_jobs_are_recorded(self):
+        earlier = [{"job": "f" * 32, "first_gate": "failed 19/21 (C-004, C-011)"}]
+        ef = self.tmp / "earlier.json"
+        ef.write_text(json.dumps(earlier), encoding="utf-8")
+        out = self.tmp / "t20-out"
+        r = convert(self.job, out, self.key, extra=("--own-host", "acme.test", "--earlier-jobs", str(ef)))
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        self.assertEqual(self.gate_of(out)["earlier_jobs"], earlier)
+        bad = self.tmp / "earlier-bad.json"
+        bad.write_text(json.dumps([{"job": "x"}]), encoding="utf-8")
+        r2 = convert(self.job, self.tmp / "t20-bad", self.key, extra=("--earlier-jobs", str(bad)))
+        self.assertEqual(r2.returncode, 1, r2.stderr)
+        self.assertIn("earlier", r2.stderr)
+
+    def test_t21_a_failed_comparison_is_said_as_it_happened(self):
+        job = self.fresh_job("t21")
+        steps = read_rows(job / "job-steps.jsonl")
+        for s in steps:
+            if s["event"] == "holdout":
+                s.update(disagreements=1, ids=["C-002"])
+        write_jsonl(job / "job-steps.jsonl", steps)
+        out = self.tmp / "t21-out"
+        r = convert(job, out, self.key)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        n = [s for s in steps if s["event"] == "holdout-sealed"][0]["drawn"]
+        self.assertEqual(self.gate_of(out)["first_gate"], f"failed {n - 1}/{n} (C-002)")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@
 that check.py passes. E2E-P1 of mission M-20261120-EVIDENCE-E2E. Standard library plus ssh-keygen on PATH; nothing is fetched.
 
 usage: python3 -I build_service_snapshot.py JOB_DIR --out FOLDER --key PRIVATE_KEY --identity PRINCIPAL [--own-host HOST]... [--formula FILE]
+       [--legacy-holdout] [--earlier-jobs FILE]
+
+HOLDOUT  grading.gates[0] is the service's holdout as job-steps.jsonl sealed it ("holdout-sealed": the answer's sha256 when
+         written, before any pass row was read; "holdout": the comparison). A job without the seal (before onedroid-audit
+         a77639b) is refused; --legacy-holdout records it with a sealed_note. --earlier-jobs FILE (a JSON list of
+         {"job", "first_gate"}) records the subject's earlier failed holdouts (SPEC.md:86; trilix 20 Nov condition 2).
 
 JOB_DIR  a onedroid-audit job: api-job.json (the request), job.json (state must be "merged") and the argus-claims run folder
          JOB_DIR/<job id>/ (publisher-surfaces profile): claims.jsonl, prove.jsonl, disprove.jsonl, run.json, sources/ with
@@ -101,6 +107,62 @@ def host_of(url):
 def one_line(s, cap=MAX_QUOTE_CHARS):
     s = re.sub(r"\s+", " ", s).strip()
     return s[:cap].rstrip()
+
+
+HEX32 = re.compile(r"[0-9a-f]{32}")
+LEGACY_NOTE = ("this job ran before the service logged the holdout's seal (onedroid-audit a77639b): sealed_sha256 is the "
+               "holdout answer as stored, sealed_at the time its comparison was logged, the later of the two possible times")
+
+
+def holdout_gate(job_dir, run_dir, fallback_at, legacy=False, earlier=None):
+    """grading.gates[0] from the audit service's sealed holdout (SPEC.md:19, :73-74, :86; trilix 20 Nov 2026, conditions 1-2).
+    The seal is job-steps.jsonl's "holdout-sealed" event, written when the holdout's answer was written and before any pass
+    row was read; its sha256 must still be holdout-report.json's. The comparison is the "holdout" event. A job without a seal
+    is refused unless legacy is set. earlier: [{"job": <32 hex>, "first_gate": str}], the subject's earlier failed jobs."""
+    job_dir, run_dir = pathlib.Path(job_dir), pathlib.Path(run_dir)
+    steps = read_jsonl(job_dir / "job-steps.jsonl") if (job_dir / "job-steps.jsonl").is_file() else []
+    seals = [s for s in steps if s.get("event") == "holdout-sealed"]
+    compared = [s for s in steps if s.get("event") == "holdout"]
+    report = job_dir / "holdout-report.json"
+    note = None
+    if seals:
+        seal = seals[-1]
+        if not report.is_file() or sha(report.read_bytes()) != seal.get("sha256"):
+            raise Refused("holdout-report.json is not the file the service sealed (its sha256 differs from the holdout-sealed event)")
+        sealed_sha, sealed_at, size, model = seal["sha256"], seal.get("at"), seal.get("drawn"), seal.get("model")
+    elif legacy:
+        src = report if report.is_file() else run_dir / "holdout.jsonl"
+        sealed_sha = sha(src.read_bytes())
+        sealed_at = compared[-1].get("at") if compared else fallback_at
+        size, model, note = None, None, LEGACY_NOTE
+    else:
+        raise Refused("job-steps.jsonl has no holdout-sealed event (a job from before onedroid-audit a77639b): "
+                      "pass --legacy-holdout to record it with a note, or re-run the job")
+    if compared:
+        c = compared[-1]
+        n = size if isinstance(size, int) and size > 0 else int(c.get("rows") or 0) + int(c.get("left_out") or 0)
+        bad = list(c.get("ids") or [])
+        wrong = int(c.get("disagreements") or 0) + int(c.get("left_out") or 0)
+        first = f"passed {n}/{n}" if wrong == 0 else f"failed {n - wrong}/{n} ({', '.join(bad)})" if bad else f"failed {n - wrong}/{n}"
+    else:
+        n = size if isinstance(size, int) else len(read_jsonl(run_dir / "holdout.jsonl"))
+        first = "not recorded"
+    if not isinstance(sealed_at, str) or not sealed_at:
+        raise Refused("the holdout's seal has no time")
+    gate = {"run": f"{job_dir.name} holdout", "size": n, "sealed_sha256": sealed_sha, "sealed_at": sealed_at,
+            "first_gate": first, "regraded_ids": [], "holdout_amended": False, "amended_sha256": None, "final": first,
+            "drawn_by": "gate.drawn_ids seeded by run_id"}
+    if model:
+        gate["model"] = model
+    if note:
+        gate["sealed_note"] = note
+    if earlier:
+        if not isinstance(earlier, list) or not all(isinstance(e, dict) and set(e) == {"job", "first_gate"}
+                                                    and isinstance(e["job"], str) and HEX32.fullmatch(e["job"])
+                                                    and isinstance(e["first_gate"], str) and e["first_gate"] for e in earlier):
+            raise Refused('--earlier-jobs: a JSON list of {"job": <32 hex job id>, "first_gate": "failed k/n (...)"}')
+        gate["earlier_jobs"] = earlier
+    return gate
 
 
 class Job:
@@ -430,13 +492,7 @@ class Builder:
         mscore = {"coverage_pct": score["coverage"], "contradiction_pct": score["contradiction"], "band": score["band"], "formula": "evidence-score/1",
                   "formula_file_sha256": sha(pathlib.Path(f.__file__).read_bytes()),
                   "note": "from the owned formula (onedroid-score evidence_score_v1) over rows_from_run of the run folder, equal to check.py's recomputation"}
-        hold = j.run / "holdout.jsonl"
-        gates_json = read_json(j.run / "gates.json", {}) or {}
-        outcome = str(gates_json.get("outcome") or "").strip() or "not recorded"
-        verdict_word = "passed" if outcome == "pass" else ("failed" if outcome.startswith("fail") else outcome)
-        gates = [{"run": "service holdout re-check", "size": len(read_jsonl(hold)), "sealed_sha256": sha(hold.read_bytes()), "sealed_at": j.fetched_at,
-                  "first_gate": f"{verdict_word} (the harness gates, outcome {outcome})", "regraded_ids": [], "holdout_amended": False,
-                  "amended_sha256": None, "final": f"{verdict_word} (the harness gates, outcome {outcome})"}]
+        gates = [j.gate]
         w_score = {"coverage_pct": sc["coverage_pct"], "contradiction_pct": sc["contradiction_pct"], "band": sc["band"]}
         manifest = {
             "format": FORMAT,
@@ -488,6 +544,14 @@ def main(argv):
         if not pathlib.Path(formula_path).is_file():
             raise Refused(f"the formula file {formula_path} is not there (--formula or ONEDROID_FORMULA)")
         job = Job(job_dir)
+        earlier = None
+        ef = (arg_values(argv, "--earlier-jobs") or [None])[-1]
+        if ef:
+            try:
+                earlier = json.loads(pathlib.Path(ef).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raise Refused(f"--earlier-jobs: {ef} is not a readable JSON file") from None
+        job.gate = holdout_gate(job.job, job.run, job.fetched_at, legacy="--legacy-holdout" in argv, earlier=earlier)
         formula = load_formula(formula_path)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
