@@ -160,7 +160,7 @@ def agree_rows(rows):
     out = []
     for a in rows:
         cl = a.get("claimed")
-        if not isinstance(cl, dict) or not a.get("checkable", True) or a.get("kind") == "promise":
+        if not isinstance(cl, dict) or "verdict" not in cl or not a.get("checkable", True) or a.get("kind") == "promise":
             continue
         r = {"id": a["id"], "verdict": cl["verdict"], "on": json.loads(json.dumps(cl.get("on") or {"proofs": [], "counter": []})),
              "note": "the model agrees (example)", "graded_at": AT2}
@@ -210,7 +210,7 @@ def build(dst, S=None, *, spec=None, audit=None, manifest=None, wit=None, entry=
     audit_h = f.sha(dst / "audit.jsonl")
     (dst / "keys").mkdir()
     wents, klist = [], []
-    cl_rows = [r for r in rows if isinstance(r.get("claimed"), dict) and r.get("checkable", True) and r.get("kind") != "promise"]
+    cl_rows = [r for r in rows if isinstance(r.get("claimed"), dict) and "verdict" in r["claimed"] and r.get("checkable", True) and r.get("kind") != "promise"]
     for w in S["witnesses"]:
         hdr = {"witness": w["name"], "kind": w["kind"], "method": w["method"], "over": {"file": "audit.jsonl", "sha256": audit_h},
                "started_at": AT1, "finished_at": AT2}
@@ -254,7 +254,8 @@ def build(dst, S=None, *, spec=None, audit=None, manifest=None, wit=None, entry=
     for pg in S["pages"]:
         p = {"file": pg["file"], "sha256": sha(pg["text"]), "lines": pg["text"].count("\n"), "fetched_at": AT, "note": "the text of the document, one block per line"}
         for k in ("media_type", "member", "extractor"):
-            p[k] = pg[k]
+            if k in pg:
+                p[k] = pg[k]
         pages.append(p)
     M = {"format": S["fmt"], "subject": S["subject"], "taken_at": AT, "pages": pages, "sources": srcs,
          "grading": {"kind": "pre-witness", "profile": "document", "graded_at": AT, "auditor": aud, "witnesses": [e for _, e in wents],
