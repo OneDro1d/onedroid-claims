@@ -2501,8 +2501,8 @@ def _main(argv, R):
                     for k_ in ("evidenced", "no_evidence", "contradicted", "contradicted_high"):
                         if mc_.get(k_) != asc.get(k_, 0) or isinstance(mc_.get(k_), bool):
                             bad.append(f"grading.auditor.counts.{k_}: manifest {mc_.get(k_)} vs {asc.get(k_, 0)} recomputed from the claimed verdicts")
-                cv_ = {a_["id"]: c_["verdict"] for a_, c_ in cl_rows}
-                by_claim_ = {a_["id"]: (a_, c_) for a_, c_ in cl_rows}
+                cv_ = {a_.get("id"): c_["verdict"] for a_, c_ in cl_rows}
+                by_claim_ = {a_.get("id"): (a_, c_) for a_, c_ in cl_rows}
 
                 def ints_(x):
                     return sorted({i_ for i_ in x if isinstance(i_, int) and not isinstance(i_, bool) and i_ >= 0}) if isinstance(x, list) else []
