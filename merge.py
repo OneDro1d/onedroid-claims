@@ -18,6 +18,9 @@ def main(argv):
     M = json.loads((snap / "manifest.json").read_text(encoding="utf-8"))
     witnesses = M.get("grading", {}).get("witnesses") or []
     name = argv[argv.index("--witness") + 1] if "--witness" in argv else next((w["name"] for w in witnesses if w.get("primary")), None)
+    if M.get("grading", {}).get("profile") == check.DOCUMENT_PROFILE and check.fmt_at_least(M, "0.9") and "--write" in argv:
+        print("refused, nothing written: the document profile names no primary and publishes no claims.jsonl (SPEC 17): there is no merge to write", file=sys.stderr)
+        return 1
     w = next((w for w in witnesses if w.get("name") == name), None)
     if w is None:
         print(f"no witness {name!r} in manifest.grading.witnesses", file=sys.stderr)

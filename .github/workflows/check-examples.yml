@@ -9,16 +9,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: the checker is the 0.9 draft (claims-snapshot 0.9 of 17 Nov 2026, the agent decider; the 0.8 checker was 5e4e0af9, sha256 f931cc7e)
+      - name: the checker is the 0.9 draft (claims-snapshot 0.9 of 17 Nov 2026, the agent decider, and of 22 Nov 2026, the document profile; the 0.8 checker was 5e4e0af9, sha256 f931cc7e; before the document profile the 0.9 checker was sha256 f0a9981e)
         run: |
-          echo "f0a9981ef4112e9939ab9f1f296a44162418dc6b5b0bee1da7ff4cef04da518d  check.py" > checker.sha256
+          echo "ff30460696c8656075864a5874c1d1f10d5a45befe68addc5944981c511eedec  check.py" > checker.sha256
           sha256sum -c checker.sha256
       - name: the checker reads every format up to 0.9 (imported from the checked-out tree, so no -I here)
-        run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.9' in check.FORMATS and 'claims-snapshot/0.8' in check.FORMATS and 'claims-snapshot/0.7' in check.FORMATS and 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
+        run: python3 -c "import check, sys; sys.exit(0 if 'claims-snapshot/0.9' in check.FORMATS and 'document' not in check.PROFILES and 'claims-snapshot/0.8' in check.FORMATS and 'claims-snapshot/0.7' in check.FORMATS and 'claims-snapshot/0.6' in check.FORMATS and 'UNDECIDED' in check.WITNESS_VERDICTS and 'UNDECIDED' not in check.VERDICTS else 1)"
       - name: the 0.8 decision suite (SPEC 16, the decision profile's K1 and K11, gating on 0.8, the witness methods read and classify)
         run: python3 -I test08_decision.py
       - name: the 0.9 agent decider suite (SPEC 16, decision.by.kind agent and enrolled_by, gating on 0.9)
         run: python3 -I test09_agent_decider.py
+      - name: the 0.9 document profile suite (SPEC 17, the subject, the pages, the candidates, the auditor's claimed verdict and score, the witness kind script and quote-check recomputed, agreement, the typographic fold, signatures, add_witness.py and merge.py in the profile)
+        run: python3 -I test09_document.py
+      - name: the 0.9 document example, the evidence in the document (SPEC 17, throwaway keys)
+        run: python3 -I check.py examples/document-in-document-proof-2026-11-22
+      - name: the 0.9 document example, the evidence at an external source saved beside the record (SPEC 17, throwaway keys)
+        run: python3 -I check.py examples/document-external-proof-2026-11-22
       - name: the 0.7 example (links, an anchor ref with a signer and a gvui, and its export verified by --export)
         run: python3 -I check.py examples/agent-work-0-7-links-2026-11-14 --export examples/agent-work-0-7-links-2026-11-14.exports/de06f00eca1ba699
       - name: the 0.7 compatibility suite (C3, every 0.6 rule on 0.7; the C1 survey needs the previous checker, not here)

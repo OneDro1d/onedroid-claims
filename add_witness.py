@@ -177,6 +177,15 @@ def main(argv):
         if fault_:
             problems.append("the answer's " + check.shape_fault_line(i_, fault_))
 
+    # 0.9 (SPEC 17): the document profile names no primary and no majority; an entry marked primary is refused by that line, before any write.
+    # A witness of kind script is a witness of that profile only.
+    is_doc = g.get("profile") == check.DOCUMENT_PROFILE and check.fmt_at_least(M, "0.9")
+    if is_doc:
+        for e_ in entries:
+            if e_.get("primary"):
+                print(f"refused, nothing written: entry {e_.get('name')!r} is marked primary, and the document profile names no primary: "
+                      "the result is the auditor's claimed verdicts and each witness's agreement with them", file=sys.stderr)
+                return 1
     names = {w.get("name") for w in g["witnesses"]}
     files_have = {w.get("file") for w in g["witnesses"]}
     auditor_signed = sources_signed(snap, M)  # the sources cut: a bound mismatch against sections the auditor signed says so
@@ -245,7 +254,7 @@ def main(argv):
                         elif bv != want[section]:
                             problems.append(f"entry {n!r}: bound {section!r} sha256 {bv[:12]}… differs from this snapshot's {want[section][:12]}…: the witness read a manifest whose {section} is not this snapshot's"
                                             + ("; the auditor signed these sections" if auditor_signed else ""))
-        if e.get("kind") not in (None, "human", "agent", "model"):
+        if e.get("kind") not in ((None, "human", "agent", "model", "script") if is_doc else (None, "human", "agent", "model")):
             problems.append(f"entry {n!r}: kind {e.get('kind')!r}")
     files_new = {e.get("file") for e in entries}
     for se in sig_entries:

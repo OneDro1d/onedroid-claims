@@ -1,0 +1,3 @@
+example-auditor namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA64GRhHeOrky+jam++m887wWvKEmCNbaYTUuKTTBqi0
+example-quote-check namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINhq7ZMaYpSfpDAi5MPQpuwueAYxFYTM1FRuA6rUHLpe
+example-model-reader namespaces="claims-snapshot" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMKlbfDQNmqP3qs+IKrdIUjCwG8DZZ+nrGDz4D9S3kRF
