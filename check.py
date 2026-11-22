@@ -2540,7 +2540,7 @@ def _main(argv, R):
                         on_c = c_.get("on") if isinstance(c_.get("on"), dict) else {}
                         r_on = r_.get("on") if isinstance(r_.get("on"), dict) else {}
                         rp_, rc_ = ints_(r_on.get("proofs")), ints_(r_on.get("counter"))
-                        shown_ = f"the row says {rv_} on proofs {rp_} counter {rc_}"
+                        shown_ = f"the row says {rv_} on proofs {rp_} counter {rc_}" + (f" with confidence {r_.get('confidence')}" if rv_ == "CONTRADICTED" else "")
                         if v_ == "NO EVIDENCE PUBLISHED":
                             if rv_ != "NO EVIDENCE PUBLISHED" or rp_ or rc_:
                                 bad.append(f"witness {name_!r} {rid_}: quote-check recomputes NO EVIDENCE PUBLISHED with an empty on, {shown_}")
