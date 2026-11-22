@@ -270,10 +270,11 @@ def build(dst, S=None, *, spec=None, audit=None, manifest=None, wit=None, entry=
                   + [e["file"] for _, e in wents if (dst / e["file"]).exists()] + [s["file"] for s in srcs if s.get("file") and (dst / s["file"]).exists()]}
     f.msave(dst, M)
     if sign:
-        f.sign(dst, "auditor", "auditor", f.AUDITOR, "audit.jsonl")
+        aid = S.get("auditor_ident", f.AUDITOR)
+        f.sign(dst, "auditor", "auditor", aid, "audit.jsonl")
         for w, e in wents:
             f.sign(dst, "witness", w["key"], w["ident"], e["file"])
-        f.sign(dst, "sources", "auditor", f.AUDITOR)
+        f.sign(dst, "sources", "auditor", aid)
     return dst
 
 

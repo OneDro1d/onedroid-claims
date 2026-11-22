@@ -1,0 +1,58 @@
+[
+ {
+  "role": "auditor",
+  "file": "audit.jsonl",
+  "sha256": "a4d7f6c769824985f40ad39cfd0918d21223fb47767261eb923a700378050a75",
+  "line": "claims-snapshot/0.4 auditor audit.jsonl sha256:a4d7f6c769824985f40ad39cfd0918d21223fb47767261eb923a700378050a75",
+  "signer": {
+   "name": "example-auditor",
+   "key_id": "SHA256:TEj4xn8rHooz7gveCGk1dw0khA+zPyPm23/UgUSXpbI",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-22T01:01:19Z",
+  "signature": "audit.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/quote-check.jsonl",
+  "sha256": "b3ed538c093567807850f622bb3293e15537631349a5247abfab91cc631d9411",
+  "line": "claims-snapshot/0.4 witness witness/quote-check.jsonl sha256:b3ed538c093567807850f622bb3293e15537631349a5247abfab91cc631d9411 over audit.jsonl sha256:a4d7f6c769824985f40ad39cfd0918d21223fb47767261eb923a700378050a75",
+  "signer": {
+   "name": "example-quote-check",
+   "key_id": "SHA256:HH8zUB6zFyJlmUz2XTbnI6Y7399Dj+9wAT5bo8Eibpo",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-22T01:01:19Z",
+  "signature": "witness/quote-check.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "witness",
+  "file": "witness/model-reader.jsonl",
+  "sha256": "9646495bec27c154df1d4151ad7d59ff4ae25de525650a23351c5709c8679734",
+  "line": "claims-snapshot/0.4 witness witness/model-reader.jsonl sha256:9646495bec27c154df1d4151ad7d59ff4ae25de525650a23351c5709c8679734 over audit.jsonl sha256:a4d7f6c769824985f40ad39cfd0918d21223fb47767261eb923a700378050a75",
+  "signer": {
+   "name": "example-model-reader",
+   "key_id": "SHA256:WqQxQaGTc7n0bwTqMUZZn7TnYlmjiF8q+nHqYriikFI",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-22T01:01:19Z",
+  "signature": "witness/model-reader.jsonl.sig",
+  "commit": null
+ },
+ {
+  "role": "sources",
+  "file": "manifest.json",
+  "sha256": "0969730ca93a101363ca08d907cb5c71babb1d7a6cdb15b083c9d80d4f1e98e4",
+  "line": "claims-snapshot/0.4 sources manifest.json sha256:0969730ca93a101363ca08d907cb5c71babb1d7a6cdb15b083c9d80d4f1e98e4",
+  "signer": {
+   "name": "example-auditor",
+   "key_id": "SHA256:TEj4xn8rHooz7gveCGk1dw0khA+zPyPm23/UgUSXpbI",
+   "kind": "ssh-ed25519"
+  },
+  "signed_at": "2026-11-22T01:01:19Z",
+  "signature": "manifest.sources.sig",
+  "commit": null
+ }
+]
