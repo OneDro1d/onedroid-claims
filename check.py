@@ -35,7 +35,7 @@ pointers (section 13, unchanged) run on a 0.8 folder of that profile only (fmt_a
 `decision.by.enrolled_by` (the person who enrolled the agent, never the agent itself); `enrolled_by` on a person or a pipeline fails. Both
 rules run on 0.9 and later only, so a 0.2 to 0.8 folder gives byte-identical output (a 0.8 folder naming `agent` still fails K1)."""
 import traceback
-import base64, datetime, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
+import base64, datetime, fractions, hashlib, html, json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, urllib.error, urllib.request
 
 FORMATS = {"claims-snapshot/0.2", "claims-snapshot/0.3", "claims-snapshot/0.4", "claims-snapshot/0.5", "claims-snapshot/0.6", "claims-snapshot/0.7", "claims-snapshot/0.8", "claims-snapshot/0.9"}
 FORMAT_RE = re.compile(r"^claims-snapshot/0\.([0-9]{1,3})$")
@@ -76,6 +76,25 @@ DECISION_REF_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 DECISION_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DECISION_DECIDERS = {"person", "pipeline"}
 DECISION_DECIDERS_09 = DECISION_DECIDERS | {"agent"}  # 0.9 (SPEC 16): an agent decides too (a break-glass re-identification), from claims-snapshot/0.9 only
+# 0.9 (SPEC 17): the document profile, a document as the subject. Known from claims-snapshot/0.9 only, so PROFILES is unchanged; every rule below
+# is keyed on the profile (and the format 0.9 or later), never on the format alone.
+DOCUMENT_PROFILE = "document"
+DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+DOCUMENT_MEDIA = ("text/plain", "text/markdown", "text/html", "application/pdf", DOCX_MEDIA, "application/zip", "application/x-git")
+DOCUMENT_MEMBER_MEDIA = ("application/zip", "application/x-git")  # a subject made of members; never the media type of one page
+DOCUMENT_EXTRACTED_MEDIA = ("application/pdf", DOCX_MEDIA)  # a page of these types is an extraction: its extractor is named
+DOCUMENT_VERDICTS = ("EVIDENCED", "NO EVIDENCE PUBLISHED", "CONTRADICTED")
+HEX40 = re.compile(r"^[0-9a-f]{40}$")
+HEX_ANY = re.compile(r"^[0-9a-f]{7,64}$")
+# the typographic fold (SPEC 17), after norm(), exactly these 16 code points and nothing else
+DOCUMENT_FOLD = str.maketrans({0x2018: "'", 0x2019: "'", 0x201A: "'", 0x201B: "'", 0x2032: "'",
+                               0x201C: '"', 0x201D: '"', 0x201E: '"', 0x201F: '"', 0x2033: '"',
+                               0x2010: "-", 0x2011: "-", 0x2012: "-", 0x2013: "-", 0x2014: "-", 0x2212: "-"})
+
+
+def document_norm(t):
+    """norm() and then the typographic fold: what K4, K5, K6 and the quote-check recomputation compare in the document profile."""
+    return norm(t).translate(DOCUMENT_FOLD)
 
 
 def parse_time(t):
@@ -1330,6 +1349,188 @@ def decision_subject_faults(M):
     return bad
 
 
+def document_member_fault(m):
+    """Why a page's `member` (the path inside a zip or a repository) is not allowed (SPEC 17), else None."""
+    if not isinstance(m, str) or not m.strip():
+        return "must be a non-empty string"
+    if m.startswith("/"):
+        return "must be relative: no leading /"
+    if "\\" in m:
+        return "must not hold a backslash"
+    if any(part == ".." for part in m.split("/")):
+        return "must not hold a .. component"
+    return None
+
+
+def document_faults(M):
+    """K1 for the document profile (SPEC 17, 0.9): the subject (six keys, the media types, sha256, url, commit), the pages (their own media
+    type, `member` for a zip or a repository, `extractor` for an extraction) and the stage (always pre-witness, no primary, no gates). The
+    problems, as text, in the order found."""
+    bad = []
+    sub = M.get("subject")
+    if not isinstance(sub, dict):
+        return ["subject must be an object"]
+    for k_ in ("kind", "title", "media_type", "sha256", "url", "commit"):
+        if k_ not in sub:
+            bad.append(f"subject.{k_}")
+    if "kind" in sub and sub["kind"] != DOCUMENT_PROFILE:
+        bad.append(f"subject.kind={sub['kind']!r} must be {DOCUMENT_PROFILE!r}")
+    if "title" in sub and not (isinstance(sub["title"], str) and sub["title"].strip()):
+        bad.append("subject.title must be a non-empty string")
+    mt = sub.get("media_type")
+    mt_ok = isinstance(mt, str) and mt in DOCUMENT_MEDIA
+    if "media_type" in sub and not mt_ok:
+        bad.append(f"subject.media_type={mt!r} is not one of {list(DOCUMENT_MEDIA)}")
+    if "sha256" in sub and not (isinstance(sub["sha256"], str) and HEX64.match(sub["sha256"])):
+        bad.append("subject.sha256 is not 64 lower-case hex")
+    if "url" in sub and sub["url"] is not None and not (isinstance(sub["url"], str) and sub["url"].startswith(("https://", "http://"))):
+        bad.append(f"subject.url={str(sub['url'])[:60]!r} is not null or a string starting https:// or http://")
+    if "commit" in sub:
+        cm = sub["commit"]
+        if mt == "application/x-git":
+            if not (isinstance(cm, str) and HEX40.match(cm)):
+                bad.append("subject.commit must be 40 lower-case hex when the media type is application/x-git")
+        elif cm is not None:
+            bad.append("subject.commit must be null unless the media type is application/x-git")
+    members = []
+    pages = M.get("pages") if isinstance(M.get("pages"), list) else []
+    multi = mt in DOCUMENT_MEMBER_MEDIA
+    for i, p in enumerate(pages):
+        if not isinstance(p, dict):
+            continue
+        pm = p.get("media_type", KeyError)
+        if pm is KeyError:
+            bad.append(f"pages[{i}].media_type")
+        elif not (isinstance(pm, str) and pm in DOCUMENT_MEDIA and pm not in DOCUMENT_MEMBER_MEDIA):
+            bad.append(f"pages[{i}].media_type={pm!r} is not a single-file media type of the list (a page is never application/zip or application/x-git)")
+        elif mt_ok and not multi and pm != mt:
+            bad.append(f"pages[{i}].media_type={pm!r} must equal subject.media_type {mt!r} for a single-file subject")
+        mem = p.get("member")
+        if multi:
+            why = document_member_fault(mem)
+            if why:
+                bad.append(f"pages[{i}].member {why} (a {mt} subject names each page's path inside it)")
+            else:
+                members.append(mem)
+        elif mem is not None:
+            bad.append(f"pages[{i}].member must be null or absent unless the subject is application/zip or application/x-git")
+        ex = p.get("extractor")
+        if isinstance(pm, str) and pm in DOCUMENT_EXTRACTED_MEDIA:
+            if not (isinstance(ex, dict) and isinstance(ex.get("name"), str) and ex["name"].strip() and isinstance(ex.get("sha256"), str) and HEX64.match(ex["sha256"])):
+                bad.append(f"pages[{i}].extractor must be an object with a name and a 64 hex sha256 (a {pm} page is an extraction)")
+        elif ex is not None:
+            bad.append(f"pages[{i}].extractor must be null or absent on a page that is not an extraction")
+    for m_ in sorted({m_ for m_ in members if members.count(m_) > 1}):
+        bad.append(f"pages: member {m_!r} is used by more than one page")
+    g = M.get("grading") if isinstance(M.get("grading"), dict) else {}
+    if g.get("kind") != "pre-witness":
+        bad.append(f"grading.kind={g.get('kind')!r} must be 'pre-witness': the document profile has no primary witness and no merge")
+    if g.get("gates"):
+        bad.append("grading.gates must be absent or empty in the document profile")
+    for i, w in enumerate(g.get("witnesses") if isinstance(g.get("witnesses"), list) else []):
+        if isinstance(w, dict) and w.get("primary"):
+            bad.append(f"grading.witnesses[{i}] is marked primary: the document profile names no primary (the result is the auditor's claimed verdicts and each witness's agreement with them)")
+    return bad
+
+
+def document_audit_faults(audit, M):
+    """K11 for the document profile (SPEC 17): every candidate of every row (`where`, `kind`, `quote`, and for `external` exactly one source),
+    and the auditor's `claimed` verdict on every checkable row. Returns (faults, warnings) as text."""
+    bad, warn = [], []
+    page_files = {p.get("file") for p in (M.get("pages") or []) if isinstance(p, dict)}
+    srcs = [s for s in (M.get("sources") or []) if isinstance(s, dict)]
+    for a in audit:
+        rid = a.get("id")
+        for side in ("proofs", "counter"):
+            lst = a.get(side) or []
+            if not isinstance(lst, list):
+                bad.append(f"{rid}: {side} is not a list")
+                continue
+            for i, c in enumerate(lst):
+                lab = f"{rid}: {side}[{i}]"
+                if not isinstance(c, dict):
+                    bad.append(f"{lab} is not an object")
+                    continue
+                w = c.get("where", KeyError)
+                if w is KeyError:
+                    bad.append(f"{lab}.where missing (document or external)")
+                elif w not in ("document", "external"):
+                    bad.append(f"{lab}.where={w!r} is not 'document' or 'external'")
+                k_ = c.get("kind", KeyError)
+                if k_ is KeyError:
+                    bad.append(f"{lab}.kind missing (artefact or restatement)")
+                elif k_ not in ("artefact", "restatement"):
+                    bad.append(f"{lab}.kind={k_!r} is not 'artefact' or 'restatement'")
+                if not (isinstance(c.get("quote"), str) and c["quote"].strip()):
+                    bad.append(f"{lab}.quote must be a non-empty string (no existence or status proofs in this profile)")
+                if w == "document":
+                    if c.get("file") not in page_files:
+                        bad.append(f"{lab}.file {c.get('file')!r} is not one of pages[].file")
+                elif w == "external":
+                    u = c.get("url")
+                    held = [s for s in srcs if isinstance(u, str) and s.get("url") == u]
+                    if len(held) != 1:
+                        bad.append(f"{lab}.url {str(u)[:80]!r} is held by {len(held)} source(s): where external needs exactly one source with that url")
+                        continue
+                    s = held[0]
+                    n_ = s.get("n")
+                    if not (isinstance(s.get("sha256"), str) and HEX64.match(s["sha256"])):
+                        bad.append(f"{lab}: source {n_}: sha256 is not 64 hex")
+                    if not s.get("fetched_at"):
+                        bad.append(f"{lab}: source {n_}: fetched_at is missing")
+                    if s.get("copy") not in ("text", "hash-only"):
+                        bad.append(f"{lab}: source {n_}: copy {s.get('copy')!r} is not text or hash-only")
+                    elif s.get("copy") == "text" and c.get("file") != s.get("file"):
+                        bad.append(f"{lab}.file {c.get('file')!r} is not the file of source {n_} ({s.get('file')!r}): a text source's candidate names its copy")
+    for a in audit:
+        rid = a.get("id")
+        checkable = bool(a.get("checkable", True)) and a.get("kind") != "promise"
+        cl = a.get("claimed", KeyError)
+        if not checkable:
+            if cl is not KeyError:
+                bad.append(f"{rid}: claimed on a row that is not checkable (checkable false or kind promise): only a checkable row carries claimed")
+            continue
+        if cl is KeyError:
+            bad.append(f"{rid}: claimed missing: every checkable row carries the auditor's claimed verdict")
+            continue
+        if not isinstance(cl, dict):
+            bad.append(f"{rid}: claimed is not an object")
+            continue
+        v = cl.get("verdict")
+        if v not in DOCUMENT_VERDICTS:
+            bad.append(f"{rid}: claimed.verdict={v!r} is not one of {list(DOCUMENT_VERDICTS)}")
+        if "confidence" in cl and cl["confidence"] not in ("high", "low"):
+            bad.append(f"{rid}: claimed.confidence={cl['confidence']!r} is not high or low")
+        elif v == "CONTRADICTED" and "confidence" not in cl:
+            bad.append(f"{rid}: claimed.confidence is required on CONTRADICTED (high or low)")
+        if not (isinstance(cl.get("note"), str) and cl["note"].strip()):
+            bad.append(f"{rid}: claimed.note must be a non-empty string")
+        on = cl.get("on")
+        if not isinstance(on, dict):
+            bad.append(f"{rid}: claimed.on must be an object with proofs and counter (lists of indices)")
+            on = {}
+        valid = {}
+        for key in ("proofs", "counter"):
+            lst = on.get(key, [])
+            n_have = len(a.get(key) or []) if isinstance(a.get(key) or [], list) else 0
+            if not (isinstance(lst, list) and all(isinstance(i, int) and not isinstance(i, bool) for i in lst)):
+                bad.append(f"{rid}: claimed.on.{key} must be a list of integers")
+                valid[key] = []
+                continue
+            valid[key] = [i for i in lst if 0 <= i < n_have]
+            for i in lst:
+                if not 0 <= i < n_have:
+                    bad.append(f"{rid}: claimed.on.{key} index {i} is outside the row's {n_have} candidate(s)")
+        art = [i for i in valid.get("proofs", []) if isinstance((a.get("proofs") or [])[i], dict) and (a.get("proofs") or [])[i].get("kind") == "artefact"]
+        if v == "EVIDENCED" and not art:
+            bad.append(f"{rid}: claimed EVIDENCED names no artefact proof in claimed.on.proofs (a restatement does not count)")
+        if v == "CONTRADICTED" and not valid.get("counter"):
+            bad.append(f"{rid}: claimed CONTRADICTED names no counter in claimed.on.counter")
+        if v == "NO EVIDENCE PUBLISHED" and art:
+            warn.append(f"{rid}: claimed NO EVIDENCE PUBLISHED but on.proofs names an artefact: the auditor saw an artefact and did not count it")
+    return bad, warn
+
+
 def _main(argv, R):
     if len(argv) < 2:
         print(__doc__)
@@ -1374,6 +1575,8 @@ def _main(argv, R):
         if k not in g:
             missing.append(f"grading.{k}")
     profiles_ = PROFILES | {DECISION_PROFILE} if fmt_at_least(M, "0.8") else PROFILES  # 0.8: the decision profile exists from claims-snapshot/0.8
+    if fmt_at_least(M, "0.9"):
+        profiles_ = profiles_ | {DOCUMENT_PROFILE}  # 0.9: the document profile (SPEC 17)
     if g.get("profile") not in profiles_:
         missing.append(f"grading.profile={g.get('profile')!r} not in {sorted(profiles_)}")
     pre_bad = []  # pre-witness (SPEC 14): what the stage forbids, said as such
@@ -1430,21 +1633,29 @@ def _main(argv, R):
     if g.get("profile") == DECISION_PROFILE and fmt_at_least(M, "0.8"):
         dc_bad = decision_subject_faults(M)
         dc_bad.extend(locator_faults(M, snap))
+    doc_bad = []  # document (SPEC 17, 0.9): the subject, the pages, the stage
+    is_doc = g.get("profile") == DOCUMENT_PROFILE and fmt_at_least(M, "0.9")
+    if is_doc:
+        doc_bad = document_faults(M)
     for i, gate in enumerate(g.get("gates", []) or []):
         for k in ("run", "size", "sealed_sha256", "sealed_at", "first_gate", "final"):
             if k not in gate:
                 missing.append(f"grading.gates[{i}].{k}")
-    k1_text = "manifest fields" + (": missing " + ", ".join(missing) if missing else (" present" if tr_bad or pre_bad or dc_bad else f" present, format {M.get('format')}, profile {g.get('profile')}, {len(g.get('gates', []) or [])} holdout gate(s) recorded"))
+    k1_text = "manifest fields" + (": missing " + ", ".join(missing) if missing else (" present" if tr_bad or pre_bad or dc_bad or doc_bad else f" present, format {M.get('format')}, profile {g.get('profile')}, {len(g.get('gates', []) or [])} holdout gate(s) recorded"))
     if tr_bad:
         k1_text += "; test-run subject or locator: " + ", ".join(tr_bad)
     if dc_bad:
         k1_text += "; decision subject or locator: " + ", ".join(dc_bad)
+    if doc_bad:
+        k1_text += "; document subject, pages or stage: " + ", ".join(doc_bad)
     if pre_bad:
         k1_text += "; pre-witness folder " + ", ".join(pre_bad)
     elif pre and not missing:
         k1_text += "; pre-witness: the auditor's part alone, no primary witness named yet"
-    R.add("K1", "FAIL" if missing or tr_bad or pre_bad or dc_bad else "PASS", k1_text)
-    if missing or tr_bad or pre_bad or dc_bad:
+    if is_doc and not (missing or pre_bad or doc_bad):
+        k1_text += "; document profile (0.9): subject, pages and stage in order"
+    R.add("K1", "FAIL" if missing or tr_bad or pre_bad or dc_bad or doc_bad else "PASS", k1_text)
+    if missing or tr_bad or pre_bad or dc_bad or doc_bad:
         return finish(R, snap, argv, M.get("format"))
 
     # K2 files and hashes: every content file the manifest names, wherever it names it, each once (13 Nov 2026, NEXT-REVISION 20 and 22):
@@ -1497,7 +1708,8 @@ def _main(argv, R):
     claims = load_jsonl(snap / "audit.jsonl") if pre else load_jsonl(snap / "claims.jsonl")  # pre-witness: the auditor's rows stand in, no verdicts
     page_files = [pg["file"] for pg in pages]
     page_text = {pg["file"]: page_text_of(pg["file"], (snap / pg["file"]).read_text(encoding="utf-8", errors="replace")) for pg in pages if (snap / pg["file"]).exists()}
-    pages_norm = norm(" ".join(page_text.values()))
+    N = document_norm if is_doc else norm  # 0.9 document profile: the typographic fold after norm() on both sides of K4, K5, K6 and quote-check
+    pages_norm = N(" ".join(page_text.values()))
     by_n = {s["n"]: s for s in M["sources"]}
     by_file = {s["file"]: s for s in M["sources"] if s.get("file")}
 
@@ -1541,7 +1753,7 @@ def _main(argv, R):
     for c in claims:
         if c.get("verdict") == "WITHDRAWN":
             continue
-        frags = [norm(f) for f in c.get("text", "").split("[...]")]
+        frags = [N(f) for f in c.get("text", "").split("[...]")]
         frags = [f for f in frags if f]
         if not frags or not all(f in pages_norm for f in frags):
             miss = [f for f in frags if f not in pages_norm]
@@ -1554,14 +1766,14 @@ def _main(argv, R):
         if file in texts:
             return texts[file]
         if file in page_text:
-            texts[file] = norm(page_text[file])
+            texts[file] = N(page_text[file])
         else:
             src = by_file.get(file)
             if src is None:
                 m = re.search(r"(\d{3})(?:\.pdf-text)?\.txt$", file or "")
                 src = by_n.get(int(m.group(1))) if m else None
             raw = copy_text(snap, copies, src) if src else None
-            texts[file] = norm(raw) if raw is not None else None
+            texts[file] = N(raw) if raw is not None else None
         return texts[file]
 
     profile = g.get("profile")
@@ -1586,7 +1798,7 @@ def _main(argv, R):
                 return "failed"
             p["verified"] = True
             return "verified"
-        if norm(p.get("quote", "")) and norm(p["quote"]) in t:
+        if N(p.get("quote", "")) and N(p["quote"]) in t:
             p["verified"] = True
             return "verified"
         p["verified"] = False
@@ -1665,12 +1877,51 @@ def _main(argv, R):
     def agent_shape(c):
         return isinstance(c.get("evidence"), list) and not c.get("proofs") and not c.get("counter")
 
+    def doc_hold(p):
+        """0.9 document profile (SPEC 17): (holds | untestable | fails, published) for one candidate. A `document` candidate is tested against
+        its page, an `external` one against the copy of the source that holds its url: the text copy in the folder, else --copies (as K5 does),
+        else it is untestable here. Both sides go through the fold. No side effect."""
+        q = N(p["quote"]) if isinstance(p.get("quote"), str) else ""
+        if not q:
+            return "fails", False
+        if p.get("where") == "document":
+            t = norm_text_for(p.get("file")) if p.get("file") in page_text else None
+            pub = True
+        else:
+            held = [s_ for s_ in M["sources"] if isinstance(p.get("url"), str) and s_.get("url") == p.get("url")]
+            if len(held) != 1:
+                return "untestable", False
+            raw = copy_text(snap, copies, held[0])
+            t = N(raw) if raw is not None else None
+            pub = bool(held[0].get("file") and (snap / held[0]["file"]).exists())
+        if t is None:
+            return "untestable", False
+        return ("holds" if q in t else "fails"), pub
+
+    def doc_test(c, p, what):
+        """K5 for a candidate of the document profile: verified | untestable | failed, saying where a miss lands (the published copy: a FAIL)."""
+        r_, pub = doc_hold(p)
+        if r_ == "holds":
+            return "verified"
+        if r_ == "untestable":
+            return "untestable"
+        quote_ = p.get("quote") if isinstance(p.get("quote"), str) else ""
+        if pub:
+            published_misses.append(f"{c['id']}: {what} quote not found in the published copy {p.get('file')}: {quote_[:60]}")
+        else:
+            bad_quotes.append(f"{c['id']}: {what} quote not found in the copy of {p.get('url')}: {quote_[:60]}")
+        return "failed"
+
     k5_fail, k5_warn, k6_fail, k6_warn, k7_fail, page_only, bad_quotes, existence, published_misses = [], [], [], [], [], [], [], [], []
     pre_tally = {"verified": 0, "untestable": 0, "failed": 0}  # pre-witness: every pointer or candidate quote of the auditor's rows, tested without a verdict
     for c in claims:
         v = c.get("verdict")
         if pre:
-            if agent_shape(c):
+            if is_doc:
+                for p in (c.get("proofs") or []) + (c.get("counter") or []):
+                    if isinstance(p, dict):
+                        pre_tally[doc_test(c, p, "candidate")] += 1
+            elif agent_shape(c):
                 for i, p in enumerate(c["evidence"]):
                     pre_tally[test_pointer(c, p, i)] += 1
             else:
@@ -1728,7 +1979,7 @@ def _main(argv, R):
                 f = p.get("file")
                 if f and f not in page_text:
                     t = norm_text_for(f)
-                    if t is not None and (p.get("quote") is None or (norm(p.get("quote", "")) and norm(p["quote"]) in t)):
+                    if t is not None and (p.get("quote") is None or (N(p.get("quote", "")) and N(p["quote"]) in t)):
                         k7_fail.append(f"{c['id']}: {v} but a source proof verifies: {f}")
     n_e = sum(1 for c in claims if c.get("verdict") == "EVIDENCED")
     if pre:
@@ -1751,7 +2002,28 @@ def _main(argv, R):
           + (bad_quotes if len(bad_quotes) <= 10 else bad_quotes[:10] + [f"... and {len(bad_quotes) - 10} more quotes not found"]))
     n_c = sum(1 for c in claims if c.get("verdict") == "CONTRADICTED")
     if pre:
-        R.add("K6", "PASS", "pre-witness: no verdicts yet, no counter quote to test")
+        if is_doc:
+            # 0.9 document (SPEC 17): there is no verdict, but the auditor CLAIMED some: each claimed CONTRADICTED row needs a named counter that holds
+            c_ok, c_warn, c_fail = 0, [], []
+            n_cc = 0
+            for c in claims:
+                cl_ = c.get("claimed")
+                if not (isinstance(cl_, dict) and cl_.get("verdict") == "CONTRADICTED"):
+                    continue
+                n_cc += 1
+                side_ = c.get("counter") or []
+                named_ = [i for i in ((cl_.get("on") or {}).get("counter") or []) if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(side_) and isinstance(side_[i], dict)]
+                st_ = [doc_hold(side_[i])[0] for i in named_]
+                if "holds" in st_:
+                    c_ok += 1
+                elif "untestable" in st_:
+                    c_warn.append(f"{c['id']}: no named counter checkable from the folder (copy not at hand)")
+                else:
+                    c_fail.append(f"{c['id']}: no named counter holds")
+            R.add("K6", "FAIL" if c_fail else ("WARN" if c_warn else "PASS"),
+                  f"document: {n_cc} claimed CONTRADICTED row(s): {c_ok} with a counter that holds, {len(c_warn)} not testable here, {len(c_fail)} with none", c_fail + c_warn)
+        else:
+            R.add("K6", "PASS", "pre-witness: no verdicts yet, no counter quote to test")
         R.add("K7", "PASS", "pre-witness: no verdicts yet, nothing to contradict")
     else:
         R.add("K6", "FAIL" if k6_fail else ("WARN" if k6_warn else "PASS"), f"{n_c} CONTRADICTED rows: {n_c - len(k6_fail) - len(k6_warn)} with a verified counter quote", k6_fail + k6_warn)
@@ -1767,7 +2039,11 @@ def _main(argv, R):
         for k, v_ in (("claims", len(claims)), ("checkable", n_chk)):
             if M["counts"].get(k) != v_:
                 bad.append(f"counts.{k}: manifest {M['counts'].get(k)} vs {v_} from audit.jsonl")
-        R.add("K8", "FAIL" if bad else "WARN", f"pre-witness: {len(claims)} claims, {n_chk} checkable" + (" (counts agree)" if not bad else "; manifest differs") + "; no score yet: it comes with the primary witness", bad)
+        if is_doc:
+            # 0.9 document: no primary and no score by design (SPEC 17); the auditor's own score is recomputed by K12
+            R.add("K8", "FAIL" if bad else "PASS", f"document: {len(claims)} claims, {n_chk} checkable" + (" (counts agree)" if not bad else "; manifest differs") + "; no top-level score by design: the auditor's score is K12's", bad)
+        else:
+            R.add("K8", "FAIL" if bad else "WARN", f"pre-witness: {len(claims)} claims, {n_chk} checkable" + (" (counts agree)" if not bad else "; manifest differs") + "; no score yet: it comes with the primary witness", bad)
     else:
         s = evidence_score(claims)
         bad = []
@@ -1814,6 +2090,8 @@ def _main(argv, R):
         fmt06 = fmt_at_least(M, "0.6")  # 0.7: "0.6 or later" (was: exactly 0.6), read at K1 kind, K12 undecided and K13 file name
         w_hdr, w_kind, w_kind_file, w_und = {}, {}, {}, {}  # 0.6: header, effective kind, kind by file, UNDECIDED count, per witness
         kind_bad = []   # a `kind` outside human | agent | model, said on K1 (FAIL in 0.6, WARN before)
+        doc_hdr_bad = []  # 0.9 document (SPEC 17): the witness header's shape (kind script, method quote-check), said on K1
+        kinds_ok = (WITNESS_KINDS | {"script"}) if is_doc else WITNESS_KINDS
         try:
             sigs_pre = json.loads((snap / "signatures.json").read_text(encoding="utf-8")) if (snap / "signatures.json").exists() else []
         except Exception:
@@ -1893,6 +2171,10 @@ def _main(argv, R):
                         bad.append(f"C-003: the evidence does not name the decision event (subject.ledger.event {ev_.get('artefact')!r}): with a ledger the reason is recorded in that event")
                     elif not isinstance(ev_, dict) and not names_ptr(c3, on_):
                         bad.append("C-003: the evidence does not name the judgement (subject.basis.on): without a ledger C-003 rests on it")
+            if is_doc:
+                d_bad_, d_warn_ = document_audit_faults(audit, M)
+                bad.extend(d_bad_)
+                k11_warn.extend(d_warn_)
             au = g.get("auditor") or {}
             if au.get("file", "audit.jsonl") != "audit.jsonl" or (au.get("sha256") and au["sha256"] != audit_h):
                 bad.append(f"grading.auditor: file {au.get('file')!r} / sha256 {str(au.get('sha256'))[:12]}… does not match audit.jsonl {audit_h[:12]}…")
@@ -1930,11 +2212,35 @@ def _main(argv, R):
             for src_, kv in (("header", header.get("kind")), ("manifest entry", w.get("kind"))):
                 if kv is None:
                     continue
-                if isinstance(kv, str) and kv in WITNESS_KINDS:
+                if isinstance(kv, str) and kv in kinds_ok:
                     if src_ == "header" or "kind" not in header:
                         ek = kv
                 else:
-                    kind_bad.append(f"witness {name!r}: {src_} kind {kv!r} is not human, agent or model")
+                    kind_bad.append(f"witness {name!r}: {src_} kind {kv!r} is not human, agent or model" + (" or script" if is_doc else ""))
+            if is_doc:
+                m_ = header.get("method")
+                if ek == "script":
+                    s_ = header.get("script", KeyError)
+                    if not isinstance(s_, dict):
+                        doc_hdr_bad.append(f"witness {name!r}: kind script needs a `script` object {{name, sha256, commit}}")
+                    else:
+                        if not (isinstance(s_.get("name"), str) and s_["name"].strip()):
+                            doc_hdr_bad.append(f"witness {name!r}: script.name must be a non-empty string")
+                        if not (isinstance(s_.get("sha256"), str) and HEX64.match(s_["sha256"])):
+                            doc_hdr_bad.append(f"witness {name!r}: script.sha256 is not 64 lower-case hex")
+                        if "commit" not in s_:
+                            doc_hdr_bad.append(f"witness {name!r}: script.commit is missing (hex or null)")
+                        elif s_["commit"] is not None and not (isinstance(s_["commit"], str) and HEX_ANY.match(s_["commit"])):
+                            doc_hdr_bad.append(f"witness {name!r}: script.commit {str(s_['commit'])[:20]!r} is not hex or null")
+                    if header.get("model") is not None:
+                        doc_hdr_bad.append(f"witness {name!r}: model must be absent or null on a script witness (a script has no model id)")
+                    if m_ != "quote-check":
+                        doc_hdr_bad.append(f"witness {name!r}: kind script runs the method 'quote-check' only (this one says {m_!r})")
+                else:
+                    if "script" in header:
+                        doc_hdr_bad.append(f"witness {name!r}: script is set on a {ek} witness: only kind script carries it")
+                    if m_ == "quote-check":
+                        doc_hdr_bad.append(f"witness {name!r}: the method 'quote-check' is for kind script only (this one is {ek!r})")
             # the carried cut (13 Nov 2026, NEXT-REVISION 25a): a model witness header's `carried` {path: sha256} names what the models were
             # shown; every path must be a page, source or session record the manifest lists, with the manifest's hash (a witness that read other
             # bytes than the record holds is broken, by name). A bound path prints no line, so a published folder's output does not change.
@@ -2028,6 +2334,11 @@ def _main(argv, R):
                 if v not in WITNESS_VERDICTS:
                     bad.append(f"witness {name!r} {rid}: verdict {v!r}")
                     continue
+                if is_doc and "live" in r and not isinstance(r["live"], dict):
+                    bad.append(f"witness {name!r} {rid}: live is not an object (what the script saw at the source live)")
+                if is_doc and v in ("EVIDENCE AVAILABLE ON REQUEST", "WITHDRAWN"):
+                    bad.append(f"witness {name!r} {rid}: verdict {v!r} is not a document-profile verdict (the three verdicts and UNDECIDED)")
+                    continue
                 if v == "MISSING CLAIM" and profile == "agent-work":
                     # 0.5: the agent's reply is not in the folder (the kit keeps the block), so a claim the block left
                     # out cannot be found on a page: it needs its text and the witness's note saying where it was made
@@ -2037,7 +2348,7 @@ def _main(argv, R):
                         bad.append(f"witness {name!r} {rid}: MISSING CLAIM with an id the auditor listed")
                     continue
                 if v == "MISSING CLAIM":
-                    frags = [norm(f) for f in (r.get("text") or "").split("[...]") if norm(f)]
+                    frags = [N(f) for f in (r.get("text") or "").split("[...]") if N(f)]
                     if not frags or not all(f in pages_norm for f in frags):
                         bad.append(f"witness {name!r} {rid}: MISSING CLAIM text not on the page")
                     if not r.get("location"):
@@ -2068,6 +2379,11 @@ def _main(argv, R):
                             bad.append(f"witness {name!r} {rid}: on.{kind_} index {i!r} outside the auditor's {n_have} candidate(s)")
                 if v == "EVIDENCED" and not on.get("proofs"):
                     bad.append(f"witness {name!r} {rid}: EVIDENCED names no proof candidate")
+                if is_doc and v == "EVIDENCED":
+                    props_ = a.get("proofs") or []
+                    if not any(isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(props_) and isinstance(props_[i], dict) and props_[i].get("kind") == "artefact"
+                               for i in (on.get("proofs") or [])):
+                        bad.append(f"witness {name!r} {rid}: EVIDENCED names no artefact proof (document profile: a restatement does not evidence a claim)")
                 if v == "CONTRADICTED" and not on.get("counter"):
                     bad.append(f"witness {name!r} {rid}: CONTRADICTED names no counter candidate")
                 if v == "CONTRADICTED" and r.get("confidence") not in ("high", "low"):
@@ -2109,6 +2425,11 @@ def _main(argv, R):
                 if k_ == "K1":
                     R.rows[i_] = (k_, "FAIL" if fmt06 else "WARN", m_ + "; witness kind: " + ", ".join(kind_bad), d_)
                     break
+        if doc_hdr_bad:
+            for i_, (k_, st_, m_, d_) in enumerate(R.rows):
+                if k_ == "K1":
+                    R.rows[i_] = (k_, "FAIL", m_ + "; witness header (document profile): " + ", ".join(doc_hdr_bad), d_)
+                    break
 
         # K12 the merge and the per-witness scores
         bad, info, k12_warn = [], [], []
@@ -2124,7 +2445,8 @@ def _main(argv, R):
                 p_verdicts = {r["id"]: r.get("verdict") for r in primary[1] if r.get("verdict") != "MISSING CLAIM"}
             else:
                 # pre-witness (0.6, SPEC 14): no primary named yet, so no merge and no score; each listed witness is still recomputed
-                k12_warn.append(f"pre-witness: no primary witness named yet, so no claims.jsonl and no score; {len([w for w in witnesses if w.get('name') in w_rows_by_name])} witness file(s) recomputed below")
+                if not is_doc:  # the document profile has no primary by design (SPEC 17): nothing to warn about
+                    k12_warn.append(f"pre-witness: no primary witness named yet, so no claims.jsonl and no score; {len([w for w in witnesses if w.get('name') in w_rows_by_name])} witness file(s) recomputed below")
                 p_verdicts = {}
             for w in witnesses:
                 rows = w_rows_by_name.get(w.get("name"))
@@ -2154,6 +2476,96 @@ def _main(argv, R):
                     info.append(f"witness {w.get('name')!r}: {sc.get('coverage_pct')}% / {sc.get('contradiction_pct')}% band {sc.get('band')}, {n_missing} missing-claim row(s)" + ("" if pre else f"; agrees with the primary on {agree} of {len(both)} claims both decided"))
                 else:
                     info.append(f"primary witness {w.get('name')!r}: {sc.get('coverage_pct')}% / {sc.get('contradiction_pct')}% band {sc.get('band')}, {n_missing} missing-claim row(s)")
+            if is_doc:
+                # 0.9 document (SPEC 17): the auditor's kind, model, score and counts, each witness's agreement with the auditor's claimed verdicts,
+                # and every row of a quote-check witness recomputed from the folder's copies (the fold applies); no majority line
+                au_ = g.get("auditor") if isinstance(g.get("auditor"), dict) else {}
+                if au_.get("kind") != "model":
+                    bad.append(f"grading.auditor.kind {au_.get('kind')!r} must be 'model' (the auditor of a document is a model)")
+                if not (isinstance(au_.get("model"), str) and au_["model"].strip()):
+                    bad.append("grading.auditor.model must name the model (the provider's id with its version)")
+                cl_rows = [(a_, a_["claimed"]) for a_ in audit if bool(a_.get("checkable", True)) and a_.get("kind") != "promise"
+                           and isinstance(a_.get("claimed"), dict) and a_["claimed"].get("verdict") in DOCUMENT_VERDICTS]
+                asc = evidence_score([{"verdict": c_["verdict"], "confidence": c_.get("confidence"), "checkable": True, "kind": a_.get("kind")} for a_, c_ in cl_rows])
+                ms_ = au_.get("score")
+                if not isinstance(ms_, dict):
+                    bad.append("grading.auditor.score is missing or not an object ({coverage_pct, contradiction_pct, band})")
+                else:
+                    for k_ in ("coverage_pct", "contradiction_pct", "band"):
+                        if ms_.get(k_) != asc.get(k_):
+                            bad.append(f"grading.auditor.score.{k_}: manifest {ms_.get(k_)} vs {asc.get(k_)} recomputed from the claimed verdicts")
+                mc_ = au_.get("counts")
+                if not isinstance(mc_, dict):
+                    bad.append("grading.auditor.counts is missing or not an object ({evidenced, no_evidence, contradicted, contradicted_high})")
+                else:
+                    for k_ in ("evidenced", "no_evidence", "contradicted", "contradicted_high"):
+                        if mc_.get(k_) != asc.get(k_, 0) or isinstance(mc_.get(k_), bool):
+                            bad.append(f"grading.auditor.counts.{k_}: manifest {mc_.get(k_)} vs {asc.get(k_, 0)} recomputed from the claimed verdicts")
+                cv_ = {a_.get("id"): c_["verdict"] for a_, c_ in cl_rows}
+                by_claim_ = {a_.get("id"): (a_, c_) for a_, c_ in cl_rows}
+
+                def ints_(x):
+                    return sorted({i_ for i_ in x if isinstance(i_, int) and not isinstance(i_, bool) and i_ >= 0}) if isinstance(x, list) else []
+                for w in witnesses:
+                    name_, rows_ = w.get("name"), w_rows_by_name.get(w.get("name"))
+                    if rows_ is None:
+                        continue
+                    dec_, seen_ = [], set()
+                    for r_ in rows_:
+                        if r_.get("id") in cv_ and r_.get("verdict") in DOCUMENT_VERDICTS and r_["id"] not in seen_:
+                            seen_.add(r_["id"])
+                            dec_.append(r_)
+                    same_ = sum(1 for r_ in dec_ if r_["verdict"] == cv_[r_["id"]])
+                    want_ag = {"with": "auditor", "decided": len(dec_), "same": same_,
+                               "pct": None if not dec_ else int(round(fractions.Fraction(100 * same_, len(dec_))))}
+                    ag_ = w.get("agreement")
+                    if not isinstance(ag_, dict):
+                        bad.append(f"witness {name_!r} has no agreement object ({{with, decided, same, pct}})")
+                    else:
+                        for k_ in ("with", "decided", "same", "pct"):
+                            if ag_.get(k_) != want_ag[k_] or isinstance(ag_.get(k_), bool):
+                                bad.append(f"witness {name_!r} agreement.{k_}: manifest {ag_.get(k_)!r} vs {want_ag[k_]!r} recomputed from the claimed verdicts")
+                    info.append(f"witness {name_!r} agrees with the auditor's claimed verdict on {same_} of {len(dec_)} checkable claims it decided")
+                    for r_ in dec_:
+                        if r_["verdict"] != cv_[r_["id"]]:
+                            info.append(f"{r_['id']}: witness {name_!r} says {r_['verdict']}, the auditor claimed {cv_[r_['id']]}")
+                    if (w_hdr.get(name_) or {}).get("method") != "quote-check":
+                        continue
+                    for r_ in rows_:
+                        rid_, rv_ = r_.get("id"), r_.get("verdict")
+                        if rid_ not in by_claim_ or rv_ == "MISSING CLAIM":
+                            continue
+                        a_, c_ = by_claim_[rid_]
+                        v_ = c_["verdict"]
+                        on_c = c_.get("on") if isinstance(c_.get("on"), dict) else {}
+                        r_on = r_.get("on") if isinstance(r_.get("on"), dict) else {}
+                        rp_, rc_ = ints_(r_on.get("proofs")), ints_(r_on.get("counter"))
+                        shown_ = f"the row says {rv_} on proofs {rp_} counter {rc_}" + (f" with confidence {r_.get('confidence')}" if rv_ == "CONTRADICTED" else "")
+                        if v_ == "NO EVIDENCE PUBLISHED":
+                            if rv_ != "NO EVIDENCE PUBLISHED" or rp_ or rc_:
+                                bad.append(f"witness {name_!r} {rid_}: quote-check recomputes NO EVIDENCE PUBLISHED with an empty on, {shown_}")
+                            continue
+                        key_ = "proofs" if v_ == "EVIDENCED" else "counter"
+                        side_ = a_.get(key_) or []
+                        named_ = [i_ for i_ in ints_(on_c.get(key_)) if i_ < len(side_) and isinstance(side_[i_], dict) and (v_ == "CONTRADICTED" or side_[i_].get("kind") == "artefact")]
+                        st_ = {i_: doc_hold(side_[i_])[0] for i_ in named_}
+                        held_ = [i_ for i_ in named_ if st_[i_] == "holds"]
+                        unt_ = [i_ for i_ in named_ if st_[i_] == "untestable"]
+                        r_key, r_other = (rp_, rc_) if key_ == "proofs" else (rc_, rp_)
+                        conf_ok = v_ == "EVIDENCED" or r_.get("confidence") == c_.get("confidence")
+                        if held_:
+                            exact_ = rv_ == v_ and r_key == held_ and not r_other and conf_ok
+                            loose_ = rv_ == v_ and set(held_) <= set(r_key) <= set(held_) | set(unt_) and not r_other and conf_ok
+                            if exact_:
+                                pass
+                            elif unt_ and loose_:
+                                k12_warn.append(f"witness {name_!r} {rid_}: quote-check cannot be recomputed in full here: candidate(s) {unt_} have no copy at hand (pass --copies); {shown_}")
+                            else:
+                                bad.append(f"witness {name_!r} {rid_}: quote-check recomputes {v_} on {key_} {held_}" + (f" with confidence {c_.get('confidence')}" if v_ == "CONTRADICTED" else "") + f", {shown_}")
+                        elif unt_:
+                            k12_warn.append(f"witness {name_!r} {rid_}: quote-check cannot be recomputed here: the named candidate(s) {unt_} have no copy at hand (pass --copies); {shown_}")
+                        elif not (rv_ == "NO EVIDENCE PUBLISHED" and not rp_ and not rc_):
+                            bad.append(f"witness {name_!r} {rid_}: quote-check recomputes NO EVIDENCE PUBLISHED (no named candidate holds), {shown_}")
             # 0.6: one line per claim on which witnesses of kind model split (UNDECIDED is a side); no majority rule, no verdict change
             model_ws = [w.get("name") for w in witnesses if w_kind.get(w.get("name")) == "model" and w.get("name") in w_rows_by_name]
             if len(model_ws) >= 2:
@@ -2167,7 +2579,7 @@ def _main(argv, R):
                         info.append(f"split on {a_.get('id')}: " + ", ".join(f"{n_} {v_}" for n_, v_ in sides))
         else:
             bad.append("no primary witness or no audit rows to merge")
-        R.add("K12", "FAIL" if bad else ("WARN" if k12_warn else "PASS"), (("pre-witness: no merge yet; per-witness scores and missing-claim counts recomputed" if pre else "claims.jsonl equals the merge; per-witness scores and missing-claim counts recomputed") if not bad else f"{len(bad)} difference(s)"), bad + k12_warn + info)
+        R.add("K12", "FAIL" if bad else ("WARN" if k12_warn else "PASS"), (("document: the auditor's score and counts, each witness's score and agreement, and every quote-check row recomputed" if is_doc else "pre-witness: no merge yet; per-witness scores and missing-claim counts recomputed" if pre else "claims.jsonl equals the merge; per-witness scores and missing-claim counts recomputed") if not bad else f"{len(bad)} difference(s)"), bad + k12_warn + info)
 
         # K13 signatures over the prescribed line, verified with ssh-keygen when it is on PATH
         parts = {"audit.jsonl": "auditor"} | {w.get("file"): "witness" for w in witnesses if w.get("file")} | {"manifest.json": "manifest"}  # manifest: 0.6, optional
@@ -2350,7 +2762,7 @@ def _main(argv, R):
             # declares it: the witness is the primary, grading.kind is "self-audit" and grading.gates records the holdout
             # (section 1); K13 reports it instead of failing. A model witness never shares the auditor's key (a model is nobody's
             # self), a non-primary agent witness never does, and in agent-work and test-run no witness does (VR-I11).
-            ma_files = {f_ for f_, k_ in w_kind_file.items() if k_ in ("model", "agent")}
+            ma_files = {f_ for f_, k_ in w_kind_file.items() if k_ in ("model", "agent", "script")}  # script: 0.9 document (SPEC 17), a script is never signed with the auditor's key
             prim_file = next((w.get("file") for w in witnesses if w.get("primary")), None)
             gates_ = g.get("gates")
             declared_self_audit = g.get("kind") == "self-audit" and isinstance(gates_, list) and len(gates_) > 0
@@ -2383,7 +2795,8 @@ def _main(argv, R):
         # the snapshot's own keys/model-keys.jsonl is a copy of it (a broken binding there warns); neither at hand warns.
         model_ws = [w for w in witnesses if w_kind.get(w.get("name")) == "model" and w.get("file") in w_kind_file]
         agent_ws = [w for w in witnesses if w_kind.get(w.get("name")) == "agent" and w.get("file") in w_kind_file]
-        for w in model_ws + agent_ws:
+        script_ws = [w for w in witnesses if w_kind.get(w.get("name")) == "script" and w.get("file") in w_kind_file]  # 0.9 document only: no other profile reads kind script
+        for w in model_ws + agent_ws + script_ws:
             if w.get("file") != f"witness/{w.get('name')}.jsonl":
                 (bad if fmt06 else warn).append(f"{w.get('file')}: the witness file's name is not its manifest name {w.get('name')!r} (witness/<name>.jsonl)")
         if model_ws:
